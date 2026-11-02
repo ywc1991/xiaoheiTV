@@ -21,6 +21,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.xiaohei.tv.data.ChannelGroups
 import com.xiaohei.tv.data.EpgEntry
 import com.xiaohei.tv.data.EpgRepository
 import com.xiaohei.tv.data.SourceStore
@@ -103,6 +104,9 @@ class MainActivity : Activity() {
                     }, 50)
                 }
                 resetAutoHide()
+            },
+            onLongClick = { channel ->
+                if (!justLaunched()) toggleFavorite(channel)
             }
         )
         list.layoutManager = LinearLayoutManager(this)
@@ -179,9 +183,15 @@ class MainActivity : Activity() {
                     return@runOnUiThread
                 }
                 errorHint.visibility = View.GONE
-                adapter.submit(channels, store.collapsedGroups)
                 val last = store.lastChannelName
                 val target = channels.firstOrNull { it.name == last } ?: channels.first()
+                // 首次加载：只展开「当前频道」所在分组，其余收起，避免一屏铺满长列表
+                if (!store.groupsInitialized) {
+                    val allGroups = channels.map { it.group }.toSet()
+                    store.collapsedGroups = (allGroups - target.group) - ChannelGroups.FAVORITE
+                    store.groupsInitialized = true
+                }
+                adapter.submit(channels, store.collapsedGroups, store.favorites)
                 // playChannel 内部会滚动列表并把焦点找回到当前频道
                 playChannel(target)
                 resetAutoHide()
@@ -307,6 +317,29 @@ class MainActivity : Activity() {
         val next = if (idx < 0) 0 else ((idx + offset) + visible.size) % visible.size
         // playChannel 内部会滚动列表并把焦点找回到当前频道
         playChannel(visible[next])
+    }
+
+    /** 长按 OK：收藏 / 取消收藏当前频道 */
+    private fun toggleFavorite(ch: Channel) {
+        store.toggleFavorite(ch.name)
+        adapter.updateFavorites(store.favorites)
+        val added = ch.name in store.favorites
+        Toast.makeText(
+            this,
+            if (added) "已收藏：${ch.name}" else "已取消收藏：${ch.name}",
+            Toast.LENGTH_SHORT
+        ).show()
+        resetAutoHide()
+        // 焦点留在刚操作的频道上（不要跳回正在播放的台）
+        list.postDelayed({
+            val pos = adapter.positionOf(ch.name)
+            if (pos >= 0) {
+                list.scrollToPosition(pos)
+                list.postDelayed({
+                    list.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus()
+                }, 50)
+            }
+        }, 50)
     }
 
     /** 手动移动列表焦点（TV 上 RecyclerView 默认焦点导航在此环境不可靠） */

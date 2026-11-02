@@ -93,7 +93,7 @@
             android:paddingStart="16dp"
             android:paddingTop="2dp"
             android:paddingBottom="10dp"
-            android:text="左右 切换频道 · 上下 选择（停留即播）\nOK 全屏/列表 · 30 秒无操作自动收起"
+            android:text="上下 选分组/频道（停留即播） · 左右 切台\nOK 展开分组 · 长按 OK 收藏 · 30 秒自动收起"
             android:textColor="@color/text_secondary"
             android:textSize="11sp" />
 

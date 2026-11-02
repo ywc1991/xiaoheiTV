@@ -13,7 +13,8 @@ object M3uParser {
             if (line.startsWith("#EXTINF")) {
                 val name = line.substringAfterLast(",").trim().ifEmpty { "未知频道" }
                 val logo = Regex("""tvg-logo="([^"]*)"""").find(line)?.groupValues?.get(1) ?: ""
-                val group = Regex("""group-title="([^"]*)"""").find(line)?.groupValues?.get(1)?.ifBlank { null } ?: "其他"
+                // 分组按台名规则计算（内置源的 group-title 全是「央视」，不可用）
+                val group = ChannelGroups.groupOf(name)
                 val urls = mutableListOf<String>()
                 var j = i + 1
                 while (j < lines.size) {

@@ -38,6 +38,23 @@ class SourceStore(context: Context) {
         collapsedGroups = s
     }
 
+    /** 是否已按「当前频道所在分组」初始化过折叠状态（只在首次加载时做一次） */
+    var groupsInitialized: Boolean
+        get() = prefs.getBoolean("groupsInitialized", false)
+        set(v) = prefs.edit().putBoolean("groupsInitialized", v).apply()
+
+    /** 收藏的频道名集合（置顶「收藏」分组的数据源） */
+    var favorites: Set<String>
+        get() = prefs.getStringSet("favorites", emptySet()) ?: emptySet()
+        set(v) = prefs.edit().putStringSet("favorites", v.toSet()).apply()
+
+    /** 切换收藏状态 */
+    fun toggleFavorite(name: String) {
+        val s = favorites.toMutableSet()
+        if (!s.add(name)) s.remove(name)
+        favorites = s
+    }
+
     /** 是否处于播放最大化（隐藏频道列表）模式 */
     var fullscreen: Boolean
         get() = prefs.getBoolean("fullscreen", false)
