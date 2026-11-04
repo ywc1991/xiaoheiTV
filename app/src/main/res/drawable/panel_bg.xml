@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  浮层面板：约 84% 不透明的深色，让底下的画面隐约透出一点氛围，
-  但不会把人脸/字幕等细节透成干扰；再配一圈发丝边与圆角立起体积感。
+  浮层面板：约 68%~72% 不透明的深色，透出更多底下画面，
+  保持文字可读的前提下营造「玻璃浮层」氛围；配发丝边与圆角立起体积感。
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <gradient
         android:angle="270"
-        android:endColor="#D2101114"
-        android:startColor="#DC1A1B1F"
+        android:endColor="#AD101114"
+        android:startColor="#B81A1B1F"
         android:type="linear" />
     <corners android:radius="@dimen/panel_radius" />
     <stroke
