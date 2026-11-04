@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 频道卡片节目单文字：卡片获得焦点时变白，更清楚；平时用暗灰 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:color="@color/text_primary" />
+    <item android:color="@color/text_tertiary" />
+</selector>

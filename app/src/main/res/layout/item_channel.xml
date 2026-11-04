@@ -43,9 +43,10 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="3dp"
+            android:duplicateParentState="true"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="@color/text_tertiary"
+            android:textColor="@color/channel_meta"
             android:textSize="@dimen/text_meta"
             tools:text="正在播：新闻联播" />
     </LinearLayout>
