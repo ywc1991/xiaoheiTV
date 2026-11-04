@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  浮层面板：完全不透明（这台电视没有实时模糊，半透明会把画面细节透成噪点），
-  靠极淡的上下渐变做出体积感，再配一圈 12% 白发的发丝边。
+  浮层面板：约 84% 不透明的深色，让底下的画面隐约透出一点氛围，
+  但不会把人脸/字幕等细节透成干扰；再配一圈发丝边与圆角立起体积感。
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <gradient
         android:angle="270"
-        android:endColor="#FF111113"
-        android:startColor="#FF1B1B1E"
+        android:endColor="#D2101114"
+        android:startColor="#DC1A1B1F"
         android:type="linear" />
     <corners android:radius="@dimen/panel_radius" />
     <stroke
