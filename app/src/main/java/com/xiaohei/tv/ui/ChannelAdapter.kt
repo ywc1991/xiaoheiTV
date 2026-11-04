@@ -78,6 +78,17 @@ class ChannelAdapter(
         private val badge: TextView = view.findViewById(R.id.playingBadge)
         private val star: TextView = view.findViewById(R.id.channelStar)
 
+        init {
+            // 焦点小字变白：直接用代码控制，比 XML 状态列表更可靠
+            itemView.setOnFocusChangeListener { _, hasFocus ->
+                meta.setTextColor(metaColor(hasFocus))
+            }
+        }
+
+        private fun metaColor(focused: Boolean): Int =
+            if (focused) androidx.core.content.ContextCompat.getColor(meta.context, R.color.text_primary)
+            else androidx.core.content.ContextCompat.getColor(meta.context, R.color.text_tertiary)
+
         fun bind(c: Channel) {
             val isFav = c.name in favorites
             star.visibility = if (isFav) View.VISIBLE else View.GONE
@@ -91,6 +102,8 @@ class ChannelAdapter(
             }
             meta.text = metaText
             meta.visibility = if (metaText.isEmpty()) View.GONE else View.VISIBLE
+            // 重绘后按当前焦点状态恢复颜色（重绘不会触发 FocusChangeListener）
+            meta.setTextColor(metaColor(itemView.isFocused))
             badge.visibility = if (c.name == playingName) View.VISIBLE else View.GONE
             itemView.isActivated = c.name == playingName
             // 优先使用打包的高清台标，未命中则回退 M3U 里的网络台标

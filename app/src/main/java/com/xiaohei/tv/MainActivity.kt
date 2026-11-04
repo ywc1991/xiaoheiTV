@@ -571,7 +571,9 @@ class MainActivity : Activity() {
                 //   焦点在左栏（列表展开）→ 收起面板，全屏播放
                 //   已经在全屏 → 退出应用，回到桌面
                 if (fullscreen) {
-                    finish()
+                    // 退出即完全关闭：停播并结束任务，不留后台
+                    player?.stop()
+                    finishAndRemoveTask()
                     return true
                 }
                 if (!focusInGroups) {
@@ -631,7 +633,14 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
+        // 不做后台播放：一旦不可交互就暂停，回到前台再继续
         player?.pause()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // 双保险：彻底不可见时停播并释放解码器，退出后不占用后台资源
+        player?.stop()
     }
 
     override fun onResume() {
@@ -639,7 +648,7 @@ class MainActivity : Activity() {
         if (loadedKey != store.sourceKey) {
             loadChannels()
         } else {
-            player?.play()
+            player?.playWhenReady = true
         }
     }
 
