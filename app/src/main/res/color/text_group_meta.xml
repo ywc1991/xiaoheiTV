@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 分组数量 / 星标：焦点时用中性灰，避免反白后脏 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:color="@color/bg_list" android:state_focused="true" />
-    <item android:color="@color/text_secondary" />
+    <item android:color="@color/on_focus_solid_muted" android:state_focused="true" />
+    <item android:color="@color/text_tertiary" />
 </selector>

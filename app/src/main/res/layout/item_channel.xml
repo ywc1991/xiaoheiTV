@@ -1,37 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 频道卡片：台标 + 两行文字 + 右侧状态。焦点时描边并轻微放大 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="@dimen/item_height"
+    android:layout_marginVertical="2dp"
     android:background="@drawable/item_channel_bg"
     android:focusable="true"
     android:focusableInTouchMode="true"
     android:gravity="center_vertical"
     android:orientation="horizontal"
-    android:paddingHorizontal="8dp">
-
-    <TextView
-        android:id="@+id/channelStar"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginEnd="2dp"
-        android:text="★"
-        android:textColor="#FFFFC53D"
-        android:textSize="12sp"
-        android:visibility="gone"
-        tools:visibility="visible" />
+    android:paddingHorizontal="10dp"
+    android:stateListAnimator="@animator/item_scale">
 
     <ImageView
         android:id="@+id/channelLogo"
         android:layout_width="@dimen/logo_size"
         android:layout_height="@dimen/logo_size"
         android:contentDescription="台标"
-        tools:src="@android:drawable.picture_frame" />
+        tools:src="@android:drawable/picture_frame" />
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
+        android:layout_marginStart="12dp"
         android:layout_weight="1"
         android:orientation="vertical">
 
@@ -40,6 +32,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
             android:maxLines="1"
             android:textColor="@color/text_primary"
             android:textSize="@dimen/text_channel"
@@ -49,24 +42,35 @@
             android:id="@+id/channelMeta"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="3dp"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="@color/text_secondary"
+            android:textColor="@color/text_tertiary"
             android:textSize="@dimen/text_meta"
-            tools:text="央视 · 5 条线路" />
+            tools:text="正在播：新闻联播" />
     </LinearLayout>
 
     <TextView
         android:id="@+id/playingBadge"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:background="@drawable/badge_live_bg"
-        android:paddingHorizontal="8dp"
-        android:paddingVertical="3dp"
-        android:text="播放中"
-        android:textColor="#FFFFFF"
-        android:textSize="11sp"
+        android:layout_marginStart="6dp"
+        android:fontFamily="sans-serif-medium"
+        android:letterSpacing="0.02"
+        android:text="● 直播"
+        android:textColor="@color/live_red"
+        android:textSize="10sp"
+        android:visibility="gone"
+        tools:visibility="visible" />
+
+    <TextView
+        android:id="@+id/channelStar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:text="★"
+        android:textColor="@color/gold"
+        android:textSize="10sp"
         android:visibility="gone"
         tools:visibility="visible" />
 </LinearLayout>

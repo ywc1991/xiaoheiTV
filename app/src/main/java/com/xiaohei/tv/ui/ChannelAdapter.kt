@@ -82,12 +82,15 @@ class ChannelAdapter(
             val isFav = c.name in favorites
             star.visibility = if (isFav) View.VISIBLE else View.GONE
             name.text = c.name
+            // 第二行只放「有用的信息」：优先节目名，其次线路数；都没有就整行隐藏，别留空占位
             val epgTitle = epg[EpgRepository.normalize(c.name)]?.current?.title
-            meta.text = when {
-                !epgTitle.isNullOrEmpty() -> "正在播：$epgTitle"
+            val metaText = when {
+                !epgTitle.isNullOrEmpty() -> epgTitle
                 c.urls.size > 1 -> "${c.urls.size} 条线路"
-                else -> "单线路"
+                else -> ""
             }
+            meta.text = metaText
+            meta.visibility = if (metaText.isEmpty()) View.GONE else View.VISIBLE
             badge.visibility = if (c.name == playingName) View.VISIBLE else View.GONE
             itemView.isActivated = c.name == playingName
             // 优先使用打包的高清台标，未命中则回退 M3U 里的网络台标

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">小黑TV</string>
-    <string name="channel_list_title">频道列表</string>
+    <string name="channel_list_title">小黑 TV</string>
     <string name="loading">正在加载频道…</string>
     <string name="settings">设置</string>
     <string name="about">小黑TV 1.0\n\n直播源：\n· 小黑推荐源（Guovin/iptv-api 自动测速聚合 + iptv-org 国际新闻精选）\n· iptv-org 中国频道\n\n所有频道均为电视台公开免费直播源。\n按菜单键可随时更新在线源。</string>

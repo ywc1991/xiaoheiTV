@@ -1,14 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <dimen name="list_width">180dp</dimen>
-    <!-- 左栏：分组 -->
-    <dimen name="group_lane_width">150dp</dimen>
+    <!-- 左栏：分组（tvOS 侧边栏，只放文字，不需要太宽） -->
+    <dimen name="group_lane_width">140dp</dimen>
     <!-- 右栏：该分组下的频道 -->
-    <dimen name="channel_lane_width">230dp</dimen>
-    <dimen name="item_height">56dp</dimen>
-    <dimen name="group_height">52dp</dimen>
-    <dimen name="logo_size">36dp</dimen>
-    <dimen name="text_channel">14sp</dimen>
+    <dimen name="channel_lane_width">250dp</dimen>
+    <!-- 浮层面板与屏幕边缘的距离 -->
+    <dimen name="panel_margin">20dp</dimen>
+    <dimen name="panel_radius">26dp</dimen>
+
+    <dimen name="item_height">58dp</dimen>
+    <dimen name="group_height">46dp</dimen>
+    <dimen name="logo_size">40dp</dimen>
+    <dimen name="text_channel">15sp</dimen>
     <dimen name="text_group">15sp</dimen>
     <dimen name="text_meta">11sp</dimen>
 </resources>

@@ -3,18 +3,22 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:layout_marginVertical="2dp"
     android:background="@drawable/item_channel_bg"
     android:focusable="true"
+    android:focusableInTouchMode="true"
     android:gravity="center_vertical"
-    android:minHeight="64dp"
+    android:minHeight="68dp"
     android:orientation="vertical"
-    android:paddingHorizontal="24dp"
-    android:paddingVertical="12dp">
+    android:paddingHorizontal="20dp"
+    android:paddingVertical="14dp"
+    android:stateListAnimator="@animator/item_scale">
 
     <TextView
         android:id="@+id/settingTitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:fontFamily="sans-serif-medium"
         android:textColor="@color/text_primary"
         android:textSize="16sp"
         tools:text="播放源：小黑推荐源" />
@@ -23,8 +27,8 @@
         android:id="@+id/settingDesc"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:textColor="@color/text_secondary"
+        android:layout_marginTop="3dp"
+        android:textColor="@color/text_tertiary"
         android:textSize="12sp"
         tools:text="内置 353 个频道" />
 </LinearLayout>

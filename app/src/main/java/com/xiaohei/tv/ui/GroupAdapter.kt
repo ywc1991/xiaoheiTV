@@ -66,16 +66,15 @@ class GroupAdapter(
     inner class VH(view: View) : RecyclerView.ViewHolder(view) {
         private val name: TextView = view.findViewById(R.id.groupName)
         private val count: TextView = view.findViewById(R.id.groupCount)
-        private val arrow: TextView = view.findViewById(R.id.groupArrow)
-        private val indicator: View = view.findViewById(R.id.groupIndicator)
+        private val star: TextView = view.findViewById(R.id.groupArrow)
 
         fun bind(item: GroupEntry, isSelected: Boolean) {
             name.text = item.name
             count.text = "${item.count}"
-            // 收藏分组用星标代替数字前缀，视觉上一眼能认出来
-            arrow.text = if (item.name == ChannelGroups.FAVORITE) "★" else "►"
+            // 收藏组除了名字，再给一颗小星，扫一眼就能认出来
+            val isFavorite = item.name == ChannelGroups.FAVORITE
+            star.visibility = if (isFavorite) View.VISIBLE else View.GONE
             itemView.isActivated = isSelected
-            indicator.visibility = if (isSelected) View.VISIBLE else View.INVISIBLE
             itemView.setOnClickListener { onGroupClick(bindingAdapterPosition) }
         }
     }

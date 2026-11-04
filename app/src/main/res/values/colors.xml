@@ -1,15 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg_main">#FF0F1318</color>
+    <!-- ===== 基础 ===== -->
+    <color name="bg_main">#FF000000</color>
     <!-- 图标专用（反色版）：仅用于 launcher 图标，不改动界面主题 -->
     <color name="ic_bg">#FFFFFFFF</color>
     <color name="ic_ink">#FF0F1318</color>
-    <color name="bg_list">#FF161C24</color>
-    <color name="bg_list_header">#FF1D2530</color>
-    <color name="bg_item_focused">#FF1F6FEB</color>
-    <color name="bg_item_playing">#FF17304D</color>
-    <color name="text_primary">#FFF0F6FC</color>
-    <color name="text_secondary">#FF9BA8B8</color>
-    <color name="accent">#FF1F6FEB</color>
-    <color name="live_red">#FFE5534B</color>
+
+    <!-- ===== 浮层面板：略透出底下的画面，靠圆角与发丝边立起来 ===== -->
+    <color name="panel">#F2141416</color>
+    <color name="hairline">#1FFFFFFF</color>
+    <color name="divider">#1FFFFFFF</color>
+
+    <!-- ===== 文字：只有三档，够用且克制 ===== -->
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_secondary">#FF98989F</color>
+    <color name="text_tertiary">#FF636366</color>
+
+    <!-- ===== 焦点 / 选中 ===== -->
+    <!-- 频道卡片：白 18% 底 + 2dp 纯白边，3 米外也能一眼看出焦点在哪 -->
+    <color name="focus_fill">#2EFFFFFF</color>
+    <color name="focus_stroke">#FFFFFFFF</color>
+    <!-- 分组行：选中但未聚焦 -->
+    <color name="row_selected">#1FFFFFFF</color>
+    <!-- 分组行：焦点直接反白，tvOS 侧边栏的做法 -->
+    <color name="row_focus_solid">#FFFFFFFF</color>
+    <color name="on_focus_solid">#FF1C1C1E</color>
+    <color name="on_focus_solid_muted">#FF8A8A8E</color>
+    <!-- 正在播放的台：极淡的底 -->
+    <color name="playing_fill">#14FFFFFF</color>
+
+    <!-- ===== 强调色：只出现在小面积 ===== -->
+    <color name="accent">#FF0A84FF</color>
+    <color name="live_red">#FFFF453A</color>
+    <color name="gold">#FFFFD60A</color>
+
+    <!-- ===== 兼容旧引用 ===== -->
+    <color name="bg_list">#F2141416</color>
+    <color name="bg_list_header">#00000000</color>
+    <color name="bg_item_focused">#FFFFFFFF</color>
+    <color name="bg_item_playing">#0FFFFFFF</color>
 </resources>
