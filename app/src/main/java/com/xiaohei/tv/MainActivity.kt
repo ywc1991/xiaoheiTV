@@ -1,6 +1,5 @@
 package com.xiaohei.tv
 
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
@@ -10,7 +9,6 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.KeyEvent
 import android.view.View
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -27,14 +25,39 @@ import com.xiaohei.tv.data.EpgRepository
 import com.xiaohei.tv.data.SourceStore
 import com.xiaohei.tv.model.Channel
 import com.xiaohei.tv.ui.ChannelAdapter
+import com.xiaohei.tv.ui.GroupAdapter
+import com.xiaohei.tv.ui.GroupEntry
 import com.xiaohei.tv.ui.SettingsActivity
 
+/**
+ * 两栏式频道浏览：
+ *
+ *   左栏＝分组（收藏 / 央视 / 卫视 / 港澳台 / 其他）
+ *   右栏＝当前选中分组下的频道
+ *
+ * 按键：
+ *   ↑↓      左栏切分组（右栏即时跟随） / 右栏切频道（停留 0.8 秒自动播放）
+ *   OK / →  焦点进入右栏（「向右展开」）
+ *   ← / 返回 焦点回到左栏（「收起」）
+ *   长按 OK  收藏 / 取消收藏
+ *   分组栏按返回 → 收起面板全屏播放；右栏对同一台再按 OK → 全屏
+ *
+ * 所有按键统一在 [dispatchKeyEvent] 里处理，避免 RecyclerView 抢走 OK 与左右键
+ * （1.6.3 的 bug 就是 OK/左右键被 onKeyDown 全局拦截成「全屏/切台」，
+ *  导致分组永远展不开）。
+ */
 class MainActivity : Activity() {
 
+    private data class GroupBucket(val name: String, val channels: List<Channel>)
+
     private lateinit var store: SourceStore
-    private lateinit var adapter: ChannelAdapter
-    private lateinit var list: RecyclerView
+
+    private lateinit var groupAdapter: GroupAdapter
+    private lateinit var channelAdapter: ChannelAdapter
+    private lateinit var groupList: RecyclerView
+    private lateinit var channelList: RecyclerView
     private lateinit var listPanel: LinearLayout
+    private lateinit var laneTitle: TextView
     private lateinit var playerView: androidx.media3.ui.PlayerView
     private lateinit var infoBar: View
     private lateinit var infoName: TextView
@@ -44,28 +67,46 @@ class MainActivity : Activity() {
     private lateinit var loadingBar: ProgressBar
 
     private var player: ExoPlayer? = null
-    private var channels: List<Channel> = emptyList()
+    private var allChannels: List<Channel> = emptyList()
+    private var groups: List<GroupBucket> = emptyList()
+    private var groupIndex = 0
+
     private var currentChannel: Channel? = null
     private var urlIndex = 0
     private var loadedKey = ""
     private var fullscreen = false
     private var epgMap: Map<String, EpgEntry> = emptyMap()
     private var epgLoading = false
+
+    /** true＝焦点在左栏分组，false＝焦点在右栏频道 */
+    private var focusInGroups = true
+
+    /** 长按 OK 已触发（用于区分短按与长按） */
+    private var longPressFired = false
+
+    /** OK 按下的时刻，用于在抬起时比较按住时长 */
+    private var okDownTime = 0L
+
+    /** 判定为长按的按住时长阈值（毫秒） */
+    private val longPressThreshold = 400L
+
     private val startTime = SystemClock.uptimeMillis()
 
-    /** 启动后 1 秒内忽略点击/按键，防止系统残留事件误触最大化或折叠 */
+    /** 启动后 1 秒内忽略按键，防止系统残留事件误触 */
     private fun justLaunched(): Boolean = SystemClock.uptimeMillis() - startTime < 1000
 
     private val handler = Handler(Looper.getMainLooper())
     private val hideInfo = Runnable { infoBar.visibility = View.GONE }
-    /** 列表可见时，30 秒无操作自动隐藏（进入最大化播放） */
     private val autoHide = Runnable {
         if (!fullscreen) applyFullscreen(true, persist = false)
     }
-    private var digitBuffer = ""
-    private val digitTimeout = Runnable {
-        digitBuffer = ""
+    private val longPressRunnable = Runnable {
+        longPressFired = true
+        val ch = focusedChannel()
+        if (ch != null) toggleFavorite(ch)
     }
+    private var digitBuffer = ""
+    private val digitTimeout = Runnable { digitBuffer = "" }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,7 +115,9 @@ class MainActivity : Activity() {
         store = SourceStore(this)
 
         listPanel = findViewById(R.id.listPanel)
-        list = findViewById(R.id.channelList)
+        groupList = findViewById(R.id.groupList)
+        channelList = findViewById(R.id.channelList)
+        laneTitle = findViewById(R.id.laneTitle)
         playerView = findViewById(R.id.playerView)
         infoBar = findViewById(R.id.infoBar)
         infoName = findViewById(R.id.infoChannelName)
@@ -83,36 +126,27 @@ class MainActivity : Activity() {
         errorHint = findViewById(R.id.errorHint)
         loadingBar = findViewById(R.id.loadingBar)
 
-        adapter = ChannelAdapter(
+        groupAdapter = GroupAdapter { index ->
+            if (justLaunched()) return@GroupAdapter
+            selectGroup(index)
+            enterChannels()
+        }
+        channelAdapter = ChannelAdapter(
             onClick = { channel ->
                 if (justLaunched()) return@ChannelAdapter
-                // 再次点击正在播放的频道 = 切换最大化/恢复列表
-                if (channel.name == currentChannel?.name) {
-                    toggleFullscreen()
-                } else {
-                    playChannel(channel)
-                }
-            },
-            onToggleGroup = { name ->
-                if (justLaunched()) return@ChannelAdapter
-                store.toggleCollapsed(name)
-                adapter.toggleGroup(name)
-                val pos = adapter.positionOfGroup(name)
-                if (pos >= 0) {
-                    list.postDelayed({
-                        list.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus()
-                    }, 50)
-                }
-                resetAutoHide()
+                if (channel.name == currentChannel?.name) toggleFullscreen() else playChannel(channel)
             },
             onLongClick = { channel ->
-                if (!justLaunched()) toggleFavorite(channel)
+                // 触摸长按本身就是明确意图（只可能发生在频道项上），不必再判断焦点在哪一栏
+                if (!justLaunched()) toggleFavorite(channel, force = true)
             }
         )
-        list.layoutManager = LinearLayoutManager(this)
-        list.adapter = adapter
-        // 焦点始终在频道列表（PlayerView 已设为不可聚焦）
-        list.requestFocus()
+
+        groupList.layoutManager = LinearLayoutManager(this)
+        groupList.adapter = groupAdapter
+        channelList.layoutManager = LinearLayoutManager(this)
+        channelList.adapter = channelAdapter
+        groupList.requestFocus()
 
         player = ExoPlayer.Builder(this).build().also {
             playerView.useController = false
@@ -120,21 +154,131 @@ class MainActivity : Activity() {
             it.addListener(playerListener)
         }
 
-        // 恢复上次的列表显隐偏好
-        applyFullscreen(store.fullscreen, persist = false)
-
+        // 启动时始终显示两栏列表：不再恢复「上次是全屏」的状态，
+        // 否则用户开机后看不到列表，会以为分组功能没了（按方向键才唤出）
+        applyFullscreen(false, persist = false)
         loadChannels()
     }
 
-    /** 切换播放最大化：隐藏/显示频道列表面板 */
+    // ---------------------------------------------------------------- 分组 / 频道
+
+    /** 按固定顺序把频道装进分组桶；「收藏」为空时不显示 */
+    private fun buildGroups(favoriteNames: Set<String>) {
+        val buckets = mutableListOf<GroupBucket>()
+
+        val favs = allChannels.filter { it.name in favoriteNames }
+        if (favs.isNotEmpty()) buckets.add(GroupBucket(ChannelGroups.FAVORITE, favs))
+
+        val byGroup = allChannels.groupBy { it.group }
+        for (g in listOf(ChannelGroups.CCTV, ChannelGroups.SATELLITE, ChannelGroups.HKMO_TW, ChannelGroups.OTHER)) {
+            val list = byGroup[g] ?: continue
+            if (list.isEmpty()) continue
+            buckets.add(GroupBucket(g, list))
+        }
+        // 规则外的分组兜底，避免丢频道
+        for ((g, list) in byGroup) {
+            if (g in ChannelGroups.ORDER || list.isEmpty()) continue
+            buckets.add(GroupBucket(g, list))
+        }
+        groups = buckets
+
+        groupAdapter.submit(
+            buckets.map { GroupEntry(it.name, it.channels.size) },
+            groupIndex.coerceIn(0, (buckets.size - 1).coerceAtLeast(0))
+        )
+    }
+
+    /** 切换左栏选中分组，右栏即时刷新 */
+    private fun selectGroup(index: Int) {
+        if (groups.isEmpty()) return
+        groupIndex = index.coerceIn(0, groups.size - 1)
+        val bucket = groups[groupIndex]
+        groupAdapter.setSelected(groupIndex)
+        channelAdapter.submit(bucket.channels, store.favorites)
+        laneTitle.text = "${bucket.name} · ${bucket.channels.size} 个频道"
+        // 若当前播放台属于该组，滚到它
+        val pos = channelAdapter.positionOf(currentChannel?.name ?: "")
+        if (pos >= 0) channelList.scrollToPosition(pos)
+        resetAutoHide()
+    }
+
+    /** 焦点进入右栏（「向右展开」） */
+    private fun enterChannels() {
+        if (groups.isEmpty()) return
+        val bucket = groups[groupIndex]
+        if (bucket.channels.isEmpty()) return
+        focusInGroups = false
+        channelList.requestFocus()
+        var pos = channelAdapter.positionOf(currentChannel?.name ?: "")
+        if (pos < 0) pos = 0
+        focusChannelAt(pos)
+        resetAutoHide()
+    }
+
+    /** 焦点回到左栏（「收起」） */
+    private fun backToGroups() {
+        focusInGroups = true
+        groupList.requestFocus()
+        focusGroupAt(groupIndex)
+        resetAutoHide()
+    }
+
+    private fun focusGroupAt(index: Int) {
+        groupList.scrollToPosition(index)
+        groupList.postDelayed({
+            groupList.findViewHolderForAdapterPosition(index)?.itemView?.requestFocus()
+        }, 30)
+    }
+
+    private fun focusChannelAt(index: Int) {
+        channelList.scrollToPosition(index)
+        channelList.postDelayed({
+            channelList.findViewHolderForAdapterPosition(index)?.itemView?.requestFocus()
+        }, 30)
+    }
+
+    private fun focusedChannel(): Channel? {
+        if (focusInGroups) return currentChannel
+        val focused = channelList.focusedChild ?: return currentChannel
+        val pos = channelList.getChildAdapterPosition(focused)
+        return if (pos >= 0) channelAdapter.channelAt(pos) else currentChannel
+    }
+
+    private fun focusedChannelPosition(): Int {
+        val focused = channelList.focusedChild ?: return 0
+        val pos = channelList.getChildAdapterPosition(focused)
+        return if (pos >= 0) pos else 0
+    }
+
+    private fun moveGroupFocus(offset: Int) {
+        val n = groups.size
+        if (n == 0) return
+        val next = ((groupIndex + offset) % n + n) % n
+        selectGroup(next)
+        focusGroupAt(next)
+    }
+
+    private fun moveChannelFocus(offset: Int) {
+        val n = channelAdapter.size()
+        if (n == 0) return
+        val next = ((focusedChannelPosition() + offset) % n + n) % n
+        focusChannelAt(next)
+        channelList.postDelayed({
+            val ch = channelAdapter.channelAt(next)
+            if (ch != null && ch.name != currentChannel?.name) playChannel(ch)
+        }, 800)
+        resetAutoHide()
+    }
+
+    // ---------------------------------------------------------------- 全屏
+
     private fun toggleFullscreen() {
         applyFullscreen(!fullscreen, persist = true)
         showInfo()
         if (fullscreen) {
-            Toast.makeText(this, "已最大化播放，按 OK 键打开频道列表", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "已最大化播放，按方向键打开频道列表", Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "已显示频道列表，按 OK 键全屏播放", Toast.LENGTH_SHORT).show()
-            restoreListFocus()
+            Toast.makeText(this, "已显示频道列表", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -145,25 +289,16 @@ class MainActivity : Activity() {
         if (on) {
             handler.removeCallbacks(autoHide)
         } else {
-            resetAutoHide()
+            backToGroups()
         }
     }
 
-    /** 重置自动隐藏计时（列表可见时开始 30 秒倒计时） */
     private fun resetAutoHide() {
         handler.removeCallbacks(autoHide)
         if (!fullscreen) handler.postDelayed(autoHide, 30_000)
     }
 
-    /** 退出全屏后把焦点移回当前播放的频道 */
-    private fun restoreListFocus() {
-        val pos = adapter.positionOf(currentChannel?.name ?: return)
-        if (pos >= 0) {
-            list.postDelayed({
-                list.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus()
-            }, 80)
-        }
-    }
+    // ---------------------------------------------------------------- 加载
 
     private fun loadChannels() {
         loadedKey = store.sourceKey
@@ -176,24 +311,25 @@ class MainActivity : Activity() {
             }
             runOnUiThread {
                 loadingBar.visibility = View.GONE
-                channels = loaded
-                if (channels.isEmpty()) {
+                allChannels = loaded
+                if (allChannels.isEmpty()) {
                     errorHint.visibility = View.VISIBLE
                     errorHint.text = "频道列表为空，按菜单键检查播放源"
                     return@runOnUiThread
                 }
                 errorHint.visibility = View.GONE
                 val last = store.lastChannelName
-                val target = channels.firstOrNull { it.name == last } ?: channels.first()
-                // 首次加载：只展开「当前频道」所在分组，其余收起，避免一屏铺满长列表
-                if (!store.groupsInitialized) {
-                    val allGroups = channels.map { it.group }.toSet()
-                    store.collapsedGroups = (allGroups - target.group) - ChannelGroups.FAVORITE
-                    store.groupsInitialized = true
-                }
-                adapter.submit(channels, store.collapsedGroups, store.favorites)
-                // playChannel 内部会滚动列表并把焦点找回到当前频道
+                val target = allChannels.firstOrNull { it.name == last } ?: allChannels.first()
+
+                buildGroups(store.favorites)
+                // 打开就停在当前频道所在分组
+                val idx = groups.indexOfFirst { b -> b.channels.any { it.name == target.name } }
+                selectGroup(if (idx >= 0) idx else 0)
+
                 playChannel(target)
+                focusInGroups = true
+                groupList.requestFocus()
+                focusGroupAt(groupIndex)
                 resetAutoHide()
                 loadEpg()
                 if (target.name == last) {
@@ -225,7 +361,6 @@ class MainActivity : Activity() {
             if (playbackState == Player.STATE_READY || playbackState == Player.STATE_BUFFERING) {
                 errorHint.visibility = View.GONE
             }
-            // 播放成功时记住当前线路，下次重启同一频道直接用它
             if (playbackState == Player.STATE_READY) {
                 store.lastUrlIndex = urlIndex
             }
@@ -234,22 +369,26 @@ class MainActivity : Activity() {
 
     private fun playChannel(channel: Channel) {
         currentChannel = channel
-        // 重启后续播：同一频道直接跳到上次播放成功的线路
-        urlIndex = if (channel.name == store.lastChannelName && store.lastUrlIndex in channel.urls.indices) {
-            store.lastUrlIndex
+        // 同一个台继续播，直接沿用上次成功的线路
+        if (channel.name == store.lastChannelName && store.lastUrlIndex in channel.urls.indices) {
+            urlIndex = store.lastUrlIndex
         } else {
-            0
+            urlIndex = 0
         }
         store.lastChannelName = channel.name
-        adapter.setPlaying(channel.name)
+        channelAdapter.setPlaying(channel.name)
         errorHint.visibility = View.GONE
-        val pos = adapter.positionOf(channel.name)
-        if (pos >= 0) list.smoothScrollToPosition(pos)
+        val pos = channelAdapter.positionOf(channel.name)
+        if (pos >= 0) channelList.smoothScrollToPosition(pos)
         showInfo()
         playCurrentUrl()
         resetAutoHide()
-        // setPlaying 会全量刷新列表（丢失焦点），这里把焦点找回到当前频道
-        restoreListFocus()
+        // setPlaying 会整列重绘，把焦点找回来（不打断用户当前所在栏）
+        if (focusInGroups) {
+            groupList.postDelayed({ focusGroupAt(groupIndex) }, 60)
+        } else {
+            if (pos >= 0) channelList.postDelayed({ focusChannelAt(pos) }, 60)
+        }
     }
 
     private fun playCurrentUrl() {
@@ -257,8 +396,7 @@ class MainActivity : Activity() {
         if (urlIndex >= ch.urls.size) return
         val url = ch.urls[urlIndex]
         Log.i("XiaoHeiTV", "play ${ch.name} line[${urlIndex + 1}/${ch.urls.size}] = $url")
-        val item = MediaItem.fromUri(url)
-        player?.setMediaItem(item)
+        player?.setMediaItem(MediaItem.fromUri(url))
         player?.prepare()
         player?.play()
         infoMeta.text = "${ch.group} · 线路 ${urlIndex + 1}/${ch.urls.size}"
@@ -272,7 +410,6 @@ class MainActivity : Activity() {
         handler.postDelayed(hideInfo, 4000)
     }
 
-    /** 后台加载节目单（6.8MB XMLTV 流式解析），就绪后刷新列表与信息栏 */
     private fun loadEpg() {
         if (epgLoading) return
         epgLoading = true
@@ -286,14 +423,15 @@ class MainActivity : Activity() {
                 epgLoading = false
                 if (map.isEmpty()) return@runOnUiThread
                 epgMap = map
-                adapter.setEpg(map)
+                channelAdapter.setEpg(map)
                 updateInfoProgram()
-                if (!fullscreen) restoreListFocus()
+                if (!fullscreen) {
+                    if (focusInGroups) focusGroupAt(groupIndex) else focusChannelAt(focusedChannelPosition())
+                }
             }
         }.start()
     }
 
-    /** 信息栏第二行：当前频道的「正在播 / 接下来」 */
     private fun updateInfoProgram() {
         val ch = currentChannel
         val entry = if (ch != null) epgMap[EpgRepository.normalize(ch.name)] else null
@@ -309,75 +447,103 @@ class MainActivity : Activity() {
         infoProgram.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
     }
 
-    private fun switchChannel(offset: Int) {
-        // 只在可见（未折叠）频道间切换
-        val visible = adapter.visibleChannels()
-        if (visible.isEmpty()) return
-        val idx = visible.indexOfFirst { it.name == currentChannel?.name }
-        val next = if (idx < 0) 0 else ((idx + offset) + visible.size) % visible.size
-        // playChannel 内部会滚动列表并把焦点找回到当前频道
-        playChannel(visible[next])
-    }
-
-    /** 长按 OK：收藏 / 取消收藏当前频道 */
-    private fun toggleFavorite(ch: Channel) {
+    /** 长按 OK：收藏 / 取消收藏 */
+    private fun toggleFavorite(ch: Channel, force: Boolean = false) {
+        // 焦点在分组栏时，长按 OK 不应该收藏「当前正在播的台」（那是误触）
+        if (focusInGroups && !force) return
         store.toggleFavorite(ch.name)
-        adapter.updateFavorites(store.favorites)
         val added = ch.name in store.favorites
+        // 收藏变化会影响「收藏」分组的成员，需要重建分组再恢复选中项
+        val keepGroup = if (groups.getOrNull(groupIndex)?.name == ChannelGroups.FAVORITE) {
+            ChannelGroups.FAVORITE
+        } else {
+            groups.getOrNull(groupIndex)?.name
+        }
+        buildGroups(store.favorites)
+        val idx = groups.indexOfFirst { it.name == keepGroup }
+        selectGroup(if (idx >= 0) idx else 0)
+        channelAdapter.updateFavorites(store.favorites)
         Toast.makeText(
             this,
             if (added) "已收藏：${ch.name}" else "已取消收藏：${ch.name}",
             Toast.LENGTH_SHORT
         ).show()
         resetAutoHide()
-        // 焦点留在刚操作的频道上（不要跳回正在播放的台）
-        list.postDelayed({
-            val pos = adapter.positionOf(ch.name)
-            if (pos >= 0) {
-                list.scrollToPosition(pos)
-                list.postDelayed({
-                    list.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus()
-                }, 50)
-            }
-        }, 50)
+        channelList.postDelayed({
+            val pos = channelAdapter.positionOf(ch.name)
+            if (pos >= 0) focusChannelAt(pos)
+        }, 60)
     }
 
-    /** 手动移动列表焦点（TV 上 RecyclerView 默认焦点导航在此环境不可靠） */
-    private fun moveListFocus(offset: Int) {
-        val count = adapter.itemCount
-        if (count == 0) return
-        if (!list.hasFocus()) list.requestFocus()
-        val focused = list.focusedChild
-        val pos = if (focused != null && list.getChildAdapterPosition(focused) >= 0) {
-            list.getChildAdapterPosition(focused)
-        } else {
-            adapter.positionOf(currentChannel?.name ?: "").coerceAtLeast(0)
+    // ---------------------------------------------------------------- 按键
+
+    private fun handleOkShort() {
+        if (fullscreen) {
+            applyFullscreen(false, persist = false)
+            return
         }
-        val next = ((pos + offset) % count + count) % count
-        list.scrollToPosition(next)
-        list.postDelayed({
-            list.findViewHolderForAdapterPosition(next)?.itemView?.requestFocus()
-        }, 50)
-        // 焦点停留 800ms 自动播放该频道（电视直播常见交互；再次移动则取消）
-        handler.removeCallbacks(focusPlay)
-        handler.postDelayed(focusPlay, 800)
+        if (focusInGroups) {
+            enterChannels()
+            return
+        }
+        val ch = focusedChannel() ?: return
+        if (ch.name == currentChannel?.name) toggleFullscreen() else playChannel(ch)
     }
 
-    /** 列表焦点停留超时：播放聚焦的频道（分组头上则忽略） */
-    private val focusPlay = Runnable {
-        val focused = list.focusedChild ?: return@Runnable
-        val pos = list.getChildAdapterPosition(focused)
-        if (pos < 0) return@Runnable
-        val ch = adapter.channelAt(pos) ?: return@Runnable
-        if (ch.name != currentChannel?.name) playChannel(ch)
-    }
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val code = event.keyCode
+        val isOk = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER
 
-    @SuppressLint("SetTextI18n")
-    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        // 启动后 1 秒内吞掉所有系统残留按键（防止误开设置页/误换台/误退出）
-        if (justLaunched()) return true
-        Log.d("XiaoHeiTV", "onKeyDown keyCode=$keyCode listFocus=${list.hasFocus()}")
-        when (keyCode) {
+        // 启动后 1 秒内吞掉方向键与 OK，避免系统残留事件误触
+        if (justLaunched() && (isOk || code == KeyEvent.KEYCODE_DPAD_UP ||
+                code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_LEFT ||
+                code == KeyEvent.KEYCODE_DPAD_RIGHT)
+        ) {
+            return true
+        }
+
+        // ---- OK / ENTER：短按与长按分开处理 ----
+        if (isOk) {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                if (event.repeatCount == 0) {
+                    longPressFired = false
+                    okDownTime = event.eventTime
+                    // 按住 450ms 立即收藏（即时反馈）；即使这个计时器被主线程拖延，
+                    // 抬起时还会用「按住时长」再判一次，双保险
+                    handler.postDelayed(longPressRunnable, 450)
+                }
+                return true
+            }
+            if (event.action == KeyEvent.ACTION_UP) {
+                handler.removeCallbacks(longPressRunnable)
+                val held = event.eventTime - okDownTime
+                if (held >= longPressThreshold) {
+                    // 长按：若计时器没来得及跑，这里补一次
+                    if (!longPressFired) {
+                        longPressFired = true
+                        focusedChannel()?.let {
+                            if (!focusInGroups) toggleFavorite(it)
+                        }
+                    }
+                } else if (!longPressFired) {
+                    handleOkShort()
+                }
+                longPressFired = false
+                return true
+            }
+        }
+
+        if (event.action != KeyEvent.ACTION_DOWN) {
+            // 已处理过的按键，抬起事件一并吞掉，避免重复触发
+            return when (code) {
+                KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_BACK,
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> true
+                else -> super.dispatchKeyEvent(event)
+            }
+        }
+
+        when (code) {
             KeyEvent.KEYCODE_MENU -> {
                 handler.removeCallbacks(autoHide)
                 startActivity(Intent(this, SettingsActivity::class.java))
@@ -386,51 +552,62 @@ class MainActivity : Activity() {
             KeyEvent.KEYCODE_BACK -> {
                 if (fullscreen) {
                     applyFullscreen(false, persist = true)
-                    restoreListFocus()
                     return true
                 }
-                if (infoBar.visibility == View.VISIBLE) {
-                    infoBar.visibility = View.GONE
-                    handler.removeCallbacks(hideInfo)
+                if (!focusInGroups) {
+                    backToGroups()
                     return true
                 }
-                return super.onKeyDown(keyCode, event)
+                // 已在分组栏：收起面板，全屏播放
+                applyFullscreen(true, persist = true)
+                return true
             }
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
-                val up = keyCode == KeyEvent.KEYCODE_DPAD_UP
-                // 全屏时按上下键唤出频道列表（焦点落在当前播放频道）
+                val up = code == KeyEvent.KEYCODE_DPAD_UP
                 if (fullscreen) {
                     applyFullscreen(false, persist = false)
-                    restoreListFocus()
                     return true
                 }
-                moveListFocus(if (up) -1 else 1)
+                if (focusInGroups) moveGroupFocus(if (up) -1 else 1) else moveChannelFocus(if (up) -1 else 1)
                 return true
             }
-            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                // 左键：上一频道；右键：下一频道
-                switchChannel(if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                if (fullscreen) {
+                    applyFullscreen(false, persist = false)
+                    return true
+                }
+                // 右键＝展开：从分组栏进入右栏
+                if (focusInGroups) enterChannels()
                 return true
             }
-            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                // OK 键：全屏最大化 / 恢复频道列表（全局切换）
-                toggleFullscreen()
+            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                if (fullscreen) {
+                    applyFullscreen(false, persist = false)
+                    return true
+                }
+                // 左键＝收起：从右栏回到分组栏
+                if (!focusInGroups) backToGroups()
                 return true
             }
             in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> {
-                digitBuffer += (keyCode - KeyEvent.KEYCODE_0).toString()
+                digitBuffer += (code - KeyEvent.KEYCODE_0).toString()
                 handler.removeCallbacks(digitTimeout)
                 handler.postDelayed(digitTimeout, 3000)
                 val n = digitBuffer.toIntOrNull()
-                val visible = adapter.visibleChannels()
-                if (n != null && n in 1..visible.size) {
-                    playChannel(visible[n - 1])
+                if (n != null && n in 1..channelAdapter.size()) {
+                    val ch = channelAdapter.channelAt(n - 1)
+                    if (ch != null) {
+                        focusInGroups = false
+                        playChannel(ch)
+                    }
                 }
                 return true
             }
         }
-        return super.onKeyDown(keyCode, event)
+        return super.dispatchKeyEvent(event)
     }
+
+    // ---------------------------------------------------------------- 生命周期
 
     override fun onPause() {
         super.onPause()

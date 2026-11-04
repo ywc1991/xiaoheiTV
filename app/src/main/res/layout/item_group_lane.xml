@@ -3,11 +3,23 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="@dimen/group_height"
-    android:background="@drawable/item_group_bg"
+    android:layout_marginHorizontal="8dp"
+    android:layout_marginVertical="3dp"
+    android:background="@drawable/item_group_lane_bg"
     android:focusable="true"
+    android:focusableInTouchMode="true"
     android:gravity="center_vertical"
     android:orientation="horizontal"
-    android:paddingHorizontal="12dp">
+    android:paddingHorizontal="10dp">
+
+    <!-- 选中/焦点指示条 -->
+    <View
+        android:id="@+id/groupIndicator"
+        android:layout_width="3dp"
+        android:layout_height="22dp"
+        android:layout_marginEnd="8dp"
+        android:background="@color/accent"
+        android:visibility="invisible" />
 
     <TextView
         android:id="@+id/groupName"
@@ -17,7 +29,7 @@
         android:duplicateParentState="true"
         android:ellipsize="end"
         android:maxLines="1"
-        android:textColor="@color/text_group_title"
+        android:textColor="@color/text_primary"
         android:textSize="@dimen/text_group"
         android:textStyle="bold"
         tools:text="央视" />
@@ -26,18 +38,18 @@
         android:id="@+id/groupCount"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginEnd="6dp"
         android:duplicateParentState="true"
-        android:textColor="@color/text_group_meta"
+        android:textColor="@color/text_secondary"
         android:textSize="@dimen/text_meta"
-        tools:text="22 个频道" />
+        tools:text="22" />
 
     <TextView
         android:id="@+id/groupArrow"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
         android:duplicateParentState="true"
-        android:textColor="@color/text_group_meta"
+        android:textColor="@color/text_secondary"
         android:textSize="@dimen/text_meta"
-        tools:text="▼" />
+        tools:text="►" />
 </LinearLayout>

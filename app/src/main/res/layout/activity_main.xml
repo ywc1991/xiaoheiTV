@@ -5,7 +5,7 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <!-- 播放区：默认铺满全屏，列表浮在左侧；不可聚焦，避免抢走列表焦点 -->
+    <!-- 播放区：默认铺满全屏，两栏列表浮在左侧；不可聚焦，避免抢走列表焦点 -->
     <androidx.media3.ui.PlayerView
         android:id="@+id/playerView"
         android:layout_width="match_parent"
@@ -68,55 +68,101 @@
         android:visibility="gone"
         tools:text="正在播放…" />
 
-    <!-- 频道列表面板（全屏最大化时隐藏） -->
+    <!-- 两栏列表面板：左＝分组，右＝该分组的频道（全屏最大化时整体隐藏） -->
     <LinearLayout
         android:id="@+id/listPanel"
-        android:layout_width="@dimen/list_width"
+        android:layout_width="wrap_content"
         android:layout_height="match_parent"
         android:background="@color/bg_list"
         android:elevation="4dp"
         android:orientation="vertical">
 
-        <TextView
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:gravity="center_vertical"
-            android:paddingStart="16dp"
-            android:text="@string/channel_list_title"
-            android:textColor="@color/text_primary"
-            android:textSize="18sp"
-            android:textStyle="bold" />
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal">
+
+            <!-- ============ 左栏：分组 ============ -->
+            <LinearLayout
+                android:layout_width="@dimen/group_lane_width"
+                android:layout_height="match_parent"
+                android:background="@color/bg_list_header"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:gravity="center_vertical"
+                    android:paddingStart="16dp"
+                    android:text="@string/channel_list_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/groupList"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:clipToPadding="false"
+                    android:paddingBottom="12dp"
+                    tools:listitem="@layout/item_group_lane" />
+            </LinearLayout>
+
+            <!-- ============ 右栏：当前分组的频道 ============ -->
+            <LinearLayout
+                android:layout_width="@dimen/channel_lane_width"
+                android:layout_height="match_parent"
+                android:background="@color/bg_list"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/laneTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:ellipsize="end"
+                    android:gravity="center_vertical"
+                    android:maxLines="1"
+                    android:paddingHorizontal="12dp"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp"
+                    tools:text="央视 · 22 个频道" />
+
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1">
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/channelList"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:clipToPadding="false"
+                        android:paddingHorizontal="6dp"
+                        android:paddingBottom="16dp"
+                        tools:listitem="@layout/item_channel" />
+
+                    <ProgressBar
+                        android:id="@+id/loadingBar"
+                        style="?android:attr/progressBarStyle"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:layout_gravity="center"
+                        android:visibility="gone" />
+                </FrameLayout>
+            </LinearLayout>
+        </LinearLayout>
 
         <TextView
+            android:id="@+id/laneHint"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingStart="16dp"
-            android:paddingTop="2dp"
-            android:paddingBottom="10dp"
-            android:text="上下 选分组/频道（停留即播） · 左右 切台\nOK 展开分组 · 长按 OK 收藏 · 30 秒自动收起"
+            android:background="@color/bg_list_header"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="8dp"
+            android:text="OK / → 展开分组　← / 返回 收起　长按 OK 收藏"
             android:textColor="@color/text_secondary"
-            android:textSize="11sp" />
-
-        <FrameLayout
-            android:layout_width="match_parent"
-            android:layout_height="match_parent">
-
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/channelList"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:clipToPadding="false"
-                android:paddingHorizontal="8dp"
-                android:paddingBottom="16dp"
-                tools:listitem="@layout/item_channel" />
-
-            <ProgressBar
-                android:id="@+id/loadingBar"
-                style="?android:attr/progressBarStyle"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_gravity="center"
-                android:visibility="gone" />
-        </FrameLayout>
+            android:textSize="10sp" />
     </LinearLayout>
 </FrameLayout>
