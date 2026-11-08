@@ -17,6 +17,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.xiaohei.tv.data.ChannelGroups
@@ -24,6 +25,7 @@ import com.xiaohei.tv.data.EpgEntry
 import com.xiaohei.tv.data.EpgRepository
 import com.xiaohei.tv.data.SourceStore
 import com.xiaohei.tv.model.Channel
+import com.xiaohei.tv.player.AdFilterDataSourceFactory
 import com.xiaohei.tv.ui.ChannelAdapter
 import com.xiaohei.tv.ui.GroupAdapter
 import com.xiaohei.tv.ui.GroupEntry
@@ -152,11 +154,19 @@ class MainActivity : Activity() {
         channelList.adapter = channelAdapter
         groupList.requestFocus()
 
-        player = ExoPlayer.Builder(this).build().also {
-            playerView.useController = false
-            playerView.player = it
-            it.addListener(playerListener)
-        }
+        player = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(
+                // 播放列表先经广告过滤器再交给解码器：只改清单，不动画面
+                DefaultMediaSourceFactory(
+                    AdFilterDataSourceFactory(this) { store.adBlock }
+                )
+            )
+            .build()
+            .also {
+                playerView.useController = false
+                playerView.player = it
+                it.addListener(playerListener)
+            }
 
         // 启动时始终显示两栏列表：不再恢复「上次是全屏」的状态，
         // 否则用户开机后看不到列表，会以为分组功能没了（按方向键才唤出）
@@ -298,23 +308,59 @@ class MainActivity : Activity() {
         focusChannelAt(next)
     }
 
+    /**
+     * 全屏播放时用上下键直接切台。
+     *
+     * 顺序按「收藏 → 央视 → 卫视 → 港澳台」拼接成一条全台序列循环，
+     * 这样从央视最后一个台继续按 ↓ 会自然进到卫视，符合看电视的习惯；
+     * 跨分组时同步把左栏选中项与右栏列表切过去，保证之后按返回唤出列表时
+     * 看到的还是当前这个台所在的组。
+     */
+    private fun zapChannel(offset: Int) {
+        if (groups.isEmpty()) return
+        val flat = groups.flatMap { it.channels }.distinctBy { it.name }
+        if (flat.isEmpty()) return
+        val cur = currentChannel
+        val idx = flat.indexOfFirst { it.name == cur?.name }
+        val next = if (idx < 0) {
+            if (offset >= 0) 0 else flat.size - 1
+        } else {
+            ((idx + offset) % flat.size + flat.size) % flat.size
+        }
+        val target = flat[next]
+        val gi = groups.indexOfFirst { b -> b.channels.any { it.name == target.name } }
+        if (gi >= 0 && gi != groupIndex) selectGroup(gi)
+        playChannel(target)
+    }
+
     // ---------------------------------------------------------------- 全屏
 
     private fun toggleFullscreen() {
         applyFullscreen(!fullscreen, persist = true)
-        showInfo()
+        // 只有进全屏才需要顶部 OSD；回到列表时面板自己带信息，OSD 会压在面板上
+        if (fullscreen) showInfo()
         if (fullscreen) {
-            Toast.makeText(this, "已最大化播放，按方向键打开频道列表", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "全屏播放：↑↓ 切台，← → 或返回打开频道列表", Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(this, "已显示频道列表", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /** 从全屏唤出列表：焦点直接落在正在播的台上，省得用户再找一遍 */
+    private fun showListOnCurrentChannel() {
+        applyFullscreen(false, persist = false)
+        enterChannels()
     }
 
     private fun applyFullscreen(on: Boolean, persist: Boolean) {
         fullscreen = on
         listPanel.visibility = if (on) View.GONE else View.VISIBLE
         if (persist) store.fullscreen = on
-        if (!on) backToGroups()
+        if (on) return
+        // 退出全屏：列表自带频道信息，OSD 必须收起，否则会和面板标题叠在一起
+        handler.removeCallbacks(hideInfo)
+        infoBar.visibility = View.GONE
+        backToGroups()
     }
 
     // ---------------------------------------------------------------- 加载
@@ -401,11 +447,14 @@ class MainActivity : Activity() {
         if (pos >= 0) channelList.smoothScrollToPosition(pos)
         showInfo()
         playCurrentUrl()
-        // setPlaying 会整列重绘，把焦点找回来（不打断用户当前所在栏）
-        if (focusInGroups) {
-            groupList.postDelayed({ focusGroupAt(groupIndex) }, 60)
-        } else {
-            if (pos >= 0) channelList.postDelayed({ focusChannelAt(pos) }, 60)
+        // setPlaying 会整列重绘，把焦点找回来（不打断用户当前所在栏）。
+        // 全屏时列表是 GONE，别再去抢焦点，否则会打断正在进行的切台。
+        if (!fullscreen) {
+            if (focusInGroups) {
+                groupList.postDelayed({ focusGroupAt(groupIndex) }, 60)
+            } else {
+                if (pos >= 0) channelList.postDelayed({ focusChannelAt(pos) }, 60)
+            }
         }
     }
 
@@ -421,6 +470,12 @@ class MainActivity : Activity() {
     }
 
     private fun showInfo() {
+        // 列表模式下顶部 OSD 会压在面板标题上，且面板本身就写了频道名，没必要重复
+        if (!fullscreen) {
+            handler.removeCallbacks(hideInfo)
+            infoBar.visibility = View.GONE
+            return
+        }
         infoBar.visibility = View.VISIBLE
         infoName.text = currentChannel?.name ?: ""
         updateInfoProgram()
@@ -496,7 +551,7 @@ class MainActivity : Activity() {
 
     private fun handleOkShort() {
         if (fullscreen) {
-            applyFullscreen(false, persist = false)
+            showListOnCurrentChannel()
             return
         }
         if (focusInGroups) {
@@ -566,14 +621,12 @@ class MainActivity : Activity() {
                 return true
             }
             KeyEvent.KEYCODE_BACK -> {
-                // 返回键逐层退出，最后一层回到电视首页：
+                // 返回键只在界面层级内回退，永远不退出应用（要退出用电视的 Home 键）：
                 //   焦点在右栏 → 回到左栏
                 //   焦点在左栏（列表展开）→ 收起面板，全屏播放
-                //   已经在全屏 → 退出应用，回到桌面
+                //   已经在全屏 → 唤出频道列表，焦点落回正在播的台
                 if (fullscreen) {
-                    // 退出即完全关闭：停播并结束任务，不留后台
-                    player?.stop()
-                    finishAndRemoveTask()
+                    showListOnCurrentChannel()
                     return true
                 }
                 if (!focusInGroups) {
@@ -587,7 +640,9 @@ class MainActivity : Activity() {
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
                 val up = code == KeyEvent.KEYCODE_DPAD_UP
                 if (fullscreen) {
-                    applyFullscreen(false, persist = false)
+                    // 全屏时上下键＝上一个 / 下一个频道（像电视遥控器的 CH+/-），
+                    // 不唤出列表，只弹一条顶部 OSD 说明切到了哪个台
+                    zapChannel(if (up) -1 else 1)
                     return true
                 }
                 if (focusInGroups) moveGroupFocus(if (up) -1 else 1) else moveChannelFocus(if (up) -1 else 1)
@@ -595,7 +650,7 @@ class MainActivity : Activity() {
             }
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 if (fullscreen) {
-                    applyFullscreen(false, persist = false)
+                    showListOnCurrentChannel()
                     return true
                 }
                 // 右键＝展开：从分组栏进入右栏
@@ -604,7 +659,7 @@ class MainActivity : Activity() {
             }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
                 if (fullscreen) {
-                    applyFullscreen(false, persist = false)
+                    showListOnCurrentChannel()
                     return true
                 }
                 // 左键＝收起：从右栏回到分组栏

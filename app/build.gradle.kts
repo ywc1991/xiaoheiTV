@@ -13,8 +13,8 @@ android {
         minSdk = 21
         // 33 是兼顾老电视安装器的稳妥值，避免过高 targetSdk 被旧 PackageManager 拒解析
         targetSdk = 33
-        versionCode = 18
-        versionName = "1.8.5"
+        versionCode = 20
+        versionName = "1.9.1"
     }
 
     signingConfigs {
@@ -49,9 +49,15 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    testOptions {
+        // 单测里 AdFilter 会调用 android.util.Log，让未 mock 的 Android 方法返回默认值
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     implementation("androidx.media3:media3-exoplayer:1.8.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.8.1")
     implementation("androidx.media3:media3-ui:1.8.1")

@@ -41,6 +41,14 @@ class SettingsActivity : Activity() {
     }
 
     private fun buildRows(): List<Row> = listOf(
+        Row(
+            if (store.adBlock) "广告过滤：已开启" else "广告过滤：已关闭",
+            "自动剔除直播流里插播的广告分片（画面烧录型广告无法去除）；个别源过滤后异常可关掉"
+        ) {
+            store.adBlock = !store.adBlock
+            toast(if (store.adBlock) "已开启广告过滤" else "已关闭广告过滤")
+            recreate()
+        },
         Row("播放源：小黑推荐源", "内置央视 / 卫视 / 港澳台频道，自动测速多线路，附高清台标与节目单") {
             store.sourceKey = "main"
             toast("已切换到小黑推荐源")
@@ -68,8 +76,8 @@ class SettingsActivity : Activity() {
         Row("在线更新自定义源", "下载自定义地址的 M3U 到本机") {
             download(store.customUrl, store.customFile(), "自定义源")
         },
-        Row("关于", "小黑TV 1.6.1 · 高清台标 + 节目单 · 频道均为公开免费直播源") {
-            toast("小黑TV 1.6.1")
+        Row("关于", "小黑TV 1.9.1 · 广告过滤 + 高清台标 + 节目单 · 频道均为公开免费直播源") {
+            toast("小黑TV 1.9.1")
         }
     )
 

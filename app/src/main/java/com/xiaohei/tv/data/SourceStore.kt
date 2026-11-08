@@ -60,6 +60,11 @@ class SourceStore(context: Context) {
         get() = prefs.getBoolean("fullscreen", false)
         set(v) = prefs.edit().putBoolean("fullscreen", v).apply()
 
+    /** 是否开启直播流的广告过滤（1.9.0 起默认开启） */
+    var adBlock: Boolean
+        get() = prefs.getBoolean("adBlock", true)
+        set(v) = prefs.edit().putBoolean("adBlock", v).apply()
+
     fun filesDir(): File = appContext.filesDir
 
     fun customFile() = File(appContext.filesDir, "custom.m3u")
