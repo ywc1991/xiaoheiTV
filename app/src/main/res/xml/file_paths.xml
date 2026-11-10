@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 更新包下载目录：getExternalFilesDir(null)/update -->
+    <external-files-path
+        name="update_external"
+        path="update/" />
+    <!-- 无外部存储时退回到内部私有目录 -->
+    <files-path
+        name="update_internal"
+        path="update/" />
+</paths>

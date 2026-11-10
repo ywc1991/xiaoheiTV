@@ -376,20 +376,7 @@ class MainActivity : Activity() {
         fullscreen = on
         listPanel.visibility = if (on) View.GONE else View.VISIBLE
         if (persist) store.fullscreen = on
-        if (on) {
-            // 第一次进全屏提示一次换源方式，之后不再打扰
-            if (!store.hintLineSwitch) {
-                store.hintLineSwitch = true
-                handler.postDelayed({
-                    if (!isFinishing) Toast.makeText(
-                        this,
-                        "画面里有广告？按遥控器「菜单」键换一条线路",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }, 700)
-            }
-            return
-        }
+        if (on) return
         // 退出全屏：列表自带频道信息，OSD 必须收起，否则会和面板标题叠在一起
         handler.removeCallbacks(hideInfo)
         infoBar.visibility = View.GONE
@@ -445,7 +432,10 @@ class MainActivity : Activity() {
                     "${ch.urls.getOrNull(urlIndex)} cause=${error.cause?.javaClass?.simpleName}:${error.cause?.message}"
             )
             // 失败也算这条线路不可用：记一次跳过，它会自动沉到后面
-            ch.urls.getOrNull(urlIndex)?.let { store.bumpLineSkip(it) }
+            ch.urls.getOrNull(urlIndex)?.let {
+                store.bumpLineSkip(it)
+                store.bumpTotalSkips()
+            }
             if (autoTries < ch.urls.size - 1) {
                 autoTries++
                 if (lineOrder.isEmpty()) buildLineOrder(ch)
@@ -518,9 +508,9 @@ class MainActivity : Activity() {
         }
     }
 
-    // ---------------------------------------------------------------- 换源（去广告主力）
-    // 免费源里的广告绝大多数是「源自己插的」，同一个台换一条线路广告往往就没了。
-    // 所以最可靠、零误判的解法不是识别广告，而是让换源足够快、并且越换越准。
+    // ---------------------------------------------------------------- 线路排序
+    // 同一个台往往有多条线路，质量参差不齐。播出错就记一笔，同一条线路错得越多排得越后，
+    // 之后进同一个台直接落到最可能能播的那条上，不用再手动切。
 
     /** 按「被跳过次数」升序排线路，同分时 IPv4 优先（IPv6 字面量地址在多数家庭网络连不通），再按原始顺序 */
     private fun buildLineOrder(ch: Channel) {
@@ -541,29 +531,6 @@ class MainActivity : Activity() {
             if (p >= 0) orderPos = p
         }
         urlIndex = lineOrder.getOrElse(orderPos) { 0 }
-    }
-
-    /** 用户主动换到下一条线路（全屏按菜单键触发） */
-    private fun switchLine() {
-        val ch = currentChannel ?: return
-        if (ch.urls.size <= 1) {
-            Toast.makeText(this, "「${ch.name}」只有 1 条线路，无法换源", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (lineOrder.isEmpty()) buildLineOrder(ch)
-        // 记下当前这条被跳过：它就是有广告 / 不好用的那条
-        val skips = store.bumpLineSkip(ch.urls[urlIndex])
-        store.bumpTotalSkips()
-        orderPos = (orderPos + 1) % lineOrder.size
-        urlIndex = lineOrder[orderPos]
-        autoTries = 0
-        errorHint.visibility = View.GONE
-        playCurrentUrl()
-        Toast.makeText(
-            this,
-            "已换到线路 ${orderPos + 1}/${lineOrder.size}（这条已避开 $skips 次）",
-            Toast.LENGTH_SHORT
-        ).show()
     }
 
     private fun playCurrentUrl() {
@@ -725,9 +692,9 @@ class MainActivity : Activity() {
 
         when (code) {
             KeyEvent.KEYCODE_MENU -> {
-                // 全屏看片时＝换一条线路（对付源插的广告）；
-                // 列表界面时＝打开设置。这样菜单键在看广告的那一刻就能直接救命。
-                if (fullscreen) switchLine() else startActivity(Intent(this, SettingsActivity::class.java))
+                // 菜单键只做一件事：打开设置。
+                // 全屏播放时按菜单键不再换源（该功能已关闭），直接吞掉，避免误触打断观看。
+                if (!fullscreen) startActivity(Intent(this, SettingsActivity::class.java))
                 return true
             }
             KeyEvent.KEYCODE_BACK -> {
