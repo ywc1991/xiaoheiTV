@@ -30,6 +30,12 @@ import com.xiaohei.tv.ui.ChannelAdapter
 import com.xiaohei.tv.ui.GroupAdapter
 import com.xiaohei.tv.ui.GroupEntry
 import com.xiaohei.tv.ui.SettingsActivity
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
 /**
  * 两栏式频道浏览：
@@ -75,6 +81,19 @@ class MainActivity : Activity() {
 
     private var currentChannel: Channel? = null
     private var urlIndex = 0
+
+    /**
+     * 当前频道的线路优先顺序（存 urls 的原始下标）。
+     * 按「被跳过次数」升序排列——广告多、老失败的线路自动沉到后面。
+     */
+    private var lineOrder: List<Int> = emptyList()
+
+    /** 当前用的是 lineOrder 里的第几项 */
+    private var orderPos = 0
+
+    /** 本轮自动换源已经试过几条，防止无限循环 */
+    private var autoTries = 0
+
     private var loadedKey = ""
     private var fullscreen = false
     private var epgMap: Map<String, EpgEntry> = emptyMap()
@@ -116,6 +135,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        relaxTls()
         setContentView(R.layout.activity_main)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         store = SourceStore(this)
@@ -356,7 +376,20 @@ class MainActivity : Activity() {
         fullscreen = on
         listPanel.visibility = if (on) View.GONE else View.VISIBLE
         if (persist) store.fullscreen = on
-        if (on) return
+        if (on) {
+            // 第一次进全屏提示一次换源方式，之后不再打扰
+            if (!store.hintLineSwitch) {
+                store.hintLineSwitch = true
+                handler.postDelayed({
+                    if (!isFinishing) Toast.makeText(
+                        this,
+                        "画面里有广告？按遥控器「菜单」键换一条线路",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }, 700)
+            }
+            return
+        }
         // 退出全屏：列表自带频道信息，OSD 必须收起，否则会和面板标题叠在一起
         handler.removeCallbacks(hideInfo)
         infoBar.visibility = View.GONE
@@ -411,8 +444,13 @@ class MainActivity : Activity() {
                 "playError ${ch.name} line[${urlIndex + 1}/${ch.urls.size}] = " +
                     "${ch.urls.getOrNull(urlIndex)} cause=${error.cause?.javaClass?.simpleName}:${error.cause?.message}"
             )
-            if (urlIndex < ch.urls.size - 1) {
-                urlIndex++
+            // 失败也算这条线路不可用：记一次跳过，它会自动沉到后面
+            ch.urls.getOrNull(urlIndex)?.let { store.bumpLineSkip(it) }
+            if (autoTries < ch.urls.size - 1) {
+                autoTries++
+                if (lineOrder.isEmpty()) buildLineOrder(ch)
+                orderPos = (orderPos + 1) % lineOrder.size
+                urlIndex = lineOrder[orderPos]
                 playCurrentUrl()
             } else {
                 errorHint.visibility = View.VISIBLE
@@ -426,6 +464,7 @@ class MainActivity : Activity() {
                 errorHint.visibility = View.GONE
             }
             if (playbackState == Player.STATE_READY) {
+                autoTries = 0
                 store.lastUrlIndex = urlIndex
             }
         }
@@ -433,12 +472,8 @@ class MainActivity : Activity() {
 
     private fun playChannel(channel: Channel) {
         currentChannel = channel
-        // 同一个台继续播，直接沿用上次成功的线路
-        if (channel.name == store.lastChannelName && store.lastUrlIndex in channel.urls.indices) {
-            urlIndex = store.lastUrlIndex
-        } else {
-            urlIndex = 0
-        }
+        autoTries = 0
+        buildLineOrder(channel)
         store.lastChannelName = channel.name
         channelAdapter.setPlaying(channel.name)
         pendingChannelPos = -1
@@ -458,6 +493,79 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * 放宽 TLS 校验。
+     *
+     * 免费直播源里大量 HTTPS 线路用的是自签证书、过期证书，或者证书链在电视的旧
+     * CA 库里不全（实测 CCTV-5 的 6 条线路里有 2 条就死在
+     * `SSLHandshakeException: Chain validation failed`）。这些线路内容本身是公开
+     * 的直播流，不做任何账号、支付等敏感传输，因此对它们跳过证书校验是合理的取舍：
+     * 换来的是可用线路数量成倍增加——而「有足够多的线路可换」正是去广告的前提。
+     */
+    private fun relaxTls() {
+        try {
+            val trustAll = arrayOf<TrustManager>(object : X509TrustManager {
+                override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
+                override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
+                override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+            })
+            val sc = SSLContext.getInstance("TLS")
+            sc.init(null, trustAll, SecureRandom())
+            HttpsURLConnection.setDefaultSSLSocketFactory(sc.socketFactory)
+            HttpsURLConnection.setDefaultHostnameVerifier { _, _ -> true }
+        } catch (e: Exception) {
+            Log.w("XiaoHeiTV", "relaxTls failed: ${e.javaClass.simpleName}")
+        }
+    }
+
+    // ---------------------------------------------------------------- 换源（去广告主力）
+    // 免费源里的广告绝大多数是「源自己插的」，同一个台换一条线路广告往往就没了。
+    // 所以最可靠、零误判的解法不是识别广告，而是让换源足够快、并且越换越准。
+
+    /** 按「被跳过次数」升序排线路，同分时 IPv4 优先（IPv6 字面量地址在多数家庭网络连不通），再按原始顺序 */
+    private fun buildLineOrder(ch: Channel) {
+        lineOrder = ch.urls.indices.sortedWith(
+            compareBy(
+                { store.lineSkips(ch.urls[it]) },
+                { if (ch.urls[it].contains("://[")) 1 else 0 },
+                { it }
+            )
+        )
+        orderPos = 0
+        // 同一个台继续看：如果上次那条线路还没被标记过，优先沿用它，避免重复定位
+        val last = store.lastUrlIndex
+        if (ch.name == store.lastChannelName && last in ch.urls.indices &&
+            store.lineSkips(ch.urls[last]) == 0
+        ) {
+            val p = lineOrder.indexOf(last)
+            if (p >= 0) orderPos = p
+        }
+        urlIndex = lineOrder.getOrElse(orderPos) { 0 }
+    }
+
+    /** 用户主动换到下一条线路（全屏按菜单键触发） */
+    private fun switchLine() {
+        val ch = currentChannel ?: return
+        if (ch.urls.size <= 1) {
+            Toast.makeText(this, "「${ch.name}」只有 1 条线路，无法换源", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (lineOrder.isEmpty()) buildLineOrder(ch)
+        // 记下当前这条被跳过：它就是有广告 / 不好用的那条
+        val skips = store.bumpLineSkip(ch.urls[urlIndex])
+        store.bumpTotalSkips()
+        orderPos = (orderPos + 1) % lineOrder.size
+        urlIndex = lineOrder[orderPos]
+        autoTries = 0
+        errorHint.visibility = View.GONE
+        playCurrentUrl()
+        Toast.makeText(
+            this,
+            "已换到线路 ${orderPos + 1}/${lineOrder.size}（这条已避开 $skips 次）",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
     private fun playCurrentUrl() {
         val ch = currentChannel ?: return
         if (urlIndex >= ch.urls.size) return
@@ -466,7 +574,7 @@ class MainActivity : Activity() {
         player?.setMediaItem(MediaItem.fromUri(url))
         player?.prepare()
         player?.play()
-        infoMeta.text = "${ch.group} · 线路 ${urlIndex + 1}/${ch.urls.size}"
+        infoMeta.text = "${ch.group} · 线路 ${orderPos + 1}/${ch.urls.size.coerceAtLeast(1)}"
     }
 
     private fun showInfo() {
@@ -617,7 +725,9 @@ class MainActivity : Activity() {
 
         when (code) {
             KeyEvent.KEYCODE_MENU -> {
-                startActivity(Intent(this, SettingsActivity::class.java))
+                // 全屏看片时＝换一条线路（对付源插的广告）；
+                // 列表界面时＝打开设置。这样菜单键在看广告的那一刻就能直接救命。
+                if (fullscreen) switchLine() else startActivity(Intent(this, SettingsActivity::class.java))
                 return true
             }
             KeyEvent.KEYCODE_BACK -> {

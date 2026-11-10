@@ -42,14 +42,31 @@ class SettingsActivity : Activity() {
 
     private fun buildRows(): List<Row> = listOf(
         Row(
-            if (store.adBlock) "广告过滤：已开启" else "广告过滤：已关闭",
-            "自动剔除直播流里插播的广告分片（画面烧录型广告无法去除）；个别源过滤后异常可关掉"
+            "换源去广告：已避开 ${store.totalSkipCount} 次",
+            "看片时遇到广告，按遥控器「菜单」键换一条线路——免费源的广告多是源自己插的，换条线路通常就没了。" +
+                "被换掉的线路会自动沉到后面，同一个台以后直接用最干净的那条。点这里可清空记忆重新评估"
+        ) {
+            AlertDialog.Builder(this)
+                .setTitle("清空线路记忆？")
+                .setMessage("会忘掉所有「哪条线路广告多」的记录，之后重新从源里的第一条开始试。")
+                .setPositiveButton("清空") { _, _ ->
+                    store.resetLineScores()
+                    store.resetTotalSkips()
+                    toast("已清空线路记忆")
+                    recreate()
+                }
+                .setNegativeButton("取消", null)
+                .show()
+        },
+        Row(
+            if (store.adBlock) "清单广告过滤：已开启" else "清单广告过滤：已关闭",
+            "自动剔除直播流清单里插播的广告分片（画面里烧录进去的广告去不掉，那类要靠上面的换源）；个别源过滤后异常可关掉"
         ) {
             store.adBlock = !store.adBlock
             toast(if (store.adBlock) "已开启广告过滤" else "已关闭广告过滤")
             recreate()
         },
-        Row("播放源：小黑推荐源", "内置央视 / 卫视 / 港澳台频道，自动测速多线路，附高清台标与节目单") {
+        Row("播放源：小黑推荐源", "内置央视 / 卫视 / 港澳台频道，同一频道多个备用线路，附高清台标与节目单") {
             store.sourceKey = "main"
             toast("已切换到小黑推荐源")
             finish()
@@ -76,8 +93,8 @@ class SettingsActivity : Activity() {
         Row("在线更新自定义源", "下载自定义地址的 M3U 到本机") {
             download(store.customUrl, store.customFile(), "自定义源")
         },
-        Row("关于", "小黑TV 1.9.1 · 广告过滤 + 高清台标 + 节目单 · 频道均为公开免费直播源") {
-            toast("小黑TV 1.9.1")
+        Row("关于", "小黑TV 2.0.0 · 换源去广告 + 清单过滤 + 高清台标 + 节目单 · 频道均为公开免费直播源") {
+            toast("小黑TV 2.0.0")
         }
     )
 

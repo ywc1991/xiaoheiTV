@@ -65,6 +65,76 @@ class SourceStore(context: Context) {
         get() = prefs.getBoolean("adBlock", true)
         set(v) = prefs.edit().putBoolean("adBlock", v).apply()
 
+    // ---------------------------------------------------------------- 线路信誉
+    // 每条线路被「主动跳过」的次数（换源 / 播放失败都计一次）。
+    // 次数越多的线路越靠后，下次进同一个台会自动选更干净的线路。
+    // 这是整套去广告机制里唯一零误判的信号：用户按下的每一次换源都是真实反馈。
+
+    private var scoreCache: MutableMap<String, Int>? = null
+
+    private fun lineKey(url: String) = Integer.toHexString(url.hashCode())
+
+    private fun scores(): MutableMap<String, Int> {
+        scoreCache?.let { return it }
+        val raw = prefs.getString("lineScores", null)
+        val m = HashMap<String, Int>()
+        if (!raw.isNullOrEmpty()) {
+            raw.split('\n').forEach { row ->
+                val i = row.lastIndexOf('=')
+                if (i > 0) {
+                    val k = row.substring(0, i)
+                    val v = row.substring(i + 1).toIntOrNull()
+                    if (v != null) m[k] = v
+                }
+            }
+        }
+        scoreCache = m
+        return m
+    }
+
+    private fun persistScores() {
+        val sb = StringBuilder()
+        scores().forEach { (k, v) -> if (v > 0) sb.append(k).append('=').append(v).append('\n') }
+        prefs.edit().putString("lineScores", sb.toString()).apply()
+    }
+
+    /** 该线路被跳过的次数 */
+    fun lineSkips(url: String): Int = scores()[lineKey(url)] ?: 0
+
+    /** 记一次跳过，返回累计次数 */
+    fun bumpLineSkip(url: String): Int {
+        val k = lineKey(url)
+        val n = (scores()[k] ?: 0) + 1
+        scores()[k] = n
+        scoreCache = scores()
+        persistScores()
+        return n
+    }
+
+    /** 清空所有线路信誉（设置页「重置线路记忆」用，换源后想重新评估时用） */
+    fun resetLineScores() {
+        scoreCache = HashMap()
+        prefs.edit().remove("lineScores").apply()
+    }
+
+    /** 累计已跳过的线路条数，用于设置页展示「已帮你避开 N 次广告」 */
+    val totalSkipCount: Int
+        get() = prefs.getInt("totalSkips", 0)
+
+    fun bumpTotalSkips() {
+        prefs.edit().putInt("totalSkips", totalSkipCount + 1).apply()
+    }
+
+    /** 与 resetLineScores 一起用，把「已避开 N 次」也归零 */
+    fun resetTotalSkips() {
+        prefs.edit().remove("totalSkips").apply()
+    }
+
+    /** 是否已经提示过「按菜单键换源」（只提示一次，不打扰） */
+    var hintLineSwitch: Boolean
+        get() = prefs.getBoolean("hintLineSwitch", false)
+        set(v) = prefs.edit().putBoolean("hintLineSwitch", v).apply()
+
     fun filesDir(): File = appContext.filesDir
 
     fun customFile() = File(appContext.filesDir, "custom.m3u")
