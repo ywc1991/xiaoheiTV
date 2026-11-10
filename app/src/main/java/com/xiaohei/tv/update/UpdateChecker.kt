@@ -36,7 +36,9 @@ object UpdateChecker {
         val version: String,
         val notes: String,
         val apkUrl: String,
-        val apkSize: Long
+        val apkSize: Long,
+        /** 资源接口地址（api.github.com/.../releases/assets/:id），国内最可靠的下载入口 */
+        val apkApiUrl: String = ""
     )
 
     /** 结果：release 与 error 互斥，两个都为 null 则表示「已是最新」。 */
@@ -73,6 +75,7 @@ object UpdateChecker {
                     val tag = o.optString("tag_name", "")
                     val assets = o.optJSONArray("assets")
                     var url = ""
+                    var apiUrl = ""
                     var size = 0L
                     if (assets != null) {
                         for (i in 0 until assets.length()) {
@@ -80,6 +83,7 @@ object UpdateChecker {
                             val name = a.optString("name", "")
                             if (name.endsWith(".apk", true) && !name.contains("source", true)) {
                                 url = a.optString("browser_download_url", "")
+                                apiUrl = a.optString("url", "")
                                 size = a.optLong("size", 0L)
                                 break
                             }
@@ -93,7 +97,8 @@ object UpdateChecker {
                             version = normalize(tag),
                             notes = o.optString("body", "").trim(),
                             apkUrl = url,
-                            apkSize = size
+                            apkSize = size,
+                            apkApiUrl = apiUrl
                         )
                     }
                 }
@@ -226,25 +231,66 @@ object UpdateChecker {
     }
 
     /**
-     * 下载候选地址。国内直连 GitHub 的 release 资产经常握手超时，
-     * 所以先直连（能通的环境最快），不通再按顺序换国内镜像。
+     * 下载候选地址。
+     *
+     * 顺序很重要：国内直连 GitHub 的 release 资产（github.com/…/releases/download/…）
+     * 基本是握手超时，但 `api.github.com` 通常是通的——检查更新能返回结果就是证据。
+     * 所以第一顺位走资源接口，把 Accept 设成 application/octet-stream 直接拿二进制。
      */
-    private fun downloadUrls(release: Release): List<String> {
+    private data class Source(val url: String, val accept: String, val label: String)
+
+    private fun sources(release: Release): List<Source> {
         val raw = release.apkUrl
-        return listOf(
-            raw,
-            "https://ghproxy.net/$raw",
-            "https://gh-proxy.com/$raw"
-        )
+        val list = ArrayList<Source>(4)
+        if (release.apkApiUrl.isNotEmpty()) {
+            list.add(Source(release.apkApiUrl, "application/octet-stream", "GitHub 接口"))
+        }
+        if (raw.isNotEmpty()) list.add(Source(raw, "", "GitHub 直连"))
+        if (raw.isNotEmpty()) {
+            list.add(Source("https://ghproxy.net/$raw", "", "镜像 ghproxy"))
+            list.add(Source("https://gh-proxy.com/$raw", "", "镜像 gh-proxy"))
+            list.add(Source("https://ghfast.top/$raw", "", "镜像 ghfast"))
+        }
+        return list
+    }
+
+    /**
+     * 手动跟随重定向：资源接口会 302 到 objects.githubusercontent.com，
+     * 交给 HttpURLConnection 自动跟会把 Accept 头丢掉，拿回来的就是一段 JSON 说明而不是 APK。
+     * （现象正是「大小不对」或下到一个几十 KB 的错误页。）
+     */
+    private fun openFollowing(url: String, accept: String): HttpURLConnection {
+        var current = url
+        var hops = 0
+        while (true) {
+            val c = URL(current).openConnection() as HttpURLConnection
+            c.connectTimeout = 10000
+            c.readTimeout = 20000
+            c.instanceFollowRedirects = false
+            c.setRequestProperty("User-Agent", UA)
+            if (accept.isNotEmpty()) c.setRequestProperty("Accept", accept)
+            c.connect()
+            val code = c.responseCode
+            if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+                val loc = c.getHeaderField("Location")
+                c.disconnect()
+                if (loc.isNullOrEmpty() || hops >= 5) throw java.io.IOException("下载跳转失败（HTTP $code）")
+                current = if (loc.startsWith("http")) loc
+                else URL(URL(current), loc).toString()
+                hops++
+                continue
+            }
+            return c
+        }
     }
 
     private fun startDownload(activity: Activity, release: Release, retry: Int) {
         val dir = updateDir(activity)
-        android.util.Log.i(TAG, "startDownload ${release.apkUrl} -> ${dir.absolutePath}")
+        android.util.Log.i(TAG, "startDownload ${release.apkUrl} api=${release.apkApiUrl} -> ${dir.absolutePath}")
         dir.listFiles()?.forEach { if (it.name.endsWith(".apk") || it.name.endsWith(".part")) it.delete() }
         val target = File(dir, fileName(release.version))
         val tmp = File(dir, target.name + ".part")
-        val urls = downloadUrls(release)
+        val urls = sources(release)
 
         val dialog = ProgressDialog(activity).apply {
             setTitle("正在下载 v${release.version}")
@@ -268,25 +314,17 @@ object UpdateChecker {
                 round++
                 var src = 0
                 while (src < urls.size && !ok && !cancelled) {
-                    val url = urls[src]
+                    val cand = urls[src]
                     src++
-                    val label = when (src) {
-                        1 -> "GitHub"
-                        else -> "备用线路 ${src - 1}"
-                    }
+                    val label = cand.label
                     if (src > 1) {
                         activity.runOnUiThread {
-                            if (dialog.isShowing) dialog.setMessage("直连超时，改走$label…")
+                            if (dialog.isShowing) dialog.setMessage("上一路不通，改走$label…")
                         }
                     }
                     var conn: HttpURLConnection? = null
                     try {
-                        conn = URL(url).openConnection() as HttpURLConnection
-                        conn.connectTimeout = 8000
-                        conn.readTimeout = 15000
-                        conn.instanceFollowRedirects = true
-                        conn.setRequestProperty("User-Agent", UA)
-                        conn.connect()
+                        conn = openFollowing(cand.url, cand.accept)
                         val code = conn.responseCode
                         android.util.Log.i(TAG, "download $label http=$code len=${conn.contentLength}")
                         if (code != 200) {
