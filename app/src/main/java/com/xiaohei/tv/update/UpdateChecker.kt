@@ -225,12 +225,26 @@ object UpdateChecker {
             .show()
     }
 
+    /**
+     * 下载候选地址。国内直连 GitHub 的 release 资产经常握手超时，
+     * 所以先直连（能通的环境最快），不通再按顺序换国内镜像。
+     */
+    private fun downloadUrls(release: Release): List<String> {
+        val raw = release.apkUrl
+        return listOf(
+            raw,
+            "https://ghproxy.net/$raw",
+            "https://gh-proxy.com/$raw"
+        )
+    }
+
     private fun startDownload(activity: Activity, release: Release, retry: Int) {
         val dir = updateDir(activity)
         android.util.Log.i(TAG, "startDownload ${release.apkUrl} -> ${dir.absolutePath}")
         dir.listFiles()?.forEach { if (it.name.endsWith(".apk") || it.name.endsWith(".part")) it.delete() }
         val target = File(dir, fileName(release.version))
         val tmp = File(dir, target.name + ".part")
+        val urls = downloadUrls(release)
 
         val dialog = ProgressDialog(activity).apply {
             setTitle("正在下载 v${release.version}")
@@ -248,22 +262,37 @@ object UpdateChecker {
             var ok = false
             var err = ""
             var cancelled = false
-            var attempt = 0
-            while (attempt <= retry && !ok && !cancelled) {
-                attempt++
-                var conn: HttpURLConnection? = null
-                try {
-                    conn = URL(release.apkUrl).openConnection() as HttpURLConnection
-                    conn.connectTimeout = 15000
-                    conn.readTimeout = 30000
-                    conn.instanceFollowRedirects = true
-                    conn.setRequestProperty("User-Agent", UA)
-                    conn.connect()
-                    val code = conn.responseCode
-                    android.util.Log.i(TAG, "download attempt=$attempt http=$code len=${conn.contentLength}")
-                    if (code != 200) {
-                        err = "下载失败（HTTP $code）"
-                    } else {
+            var round = 0
+            // 每个地址一轮；全部失败后再整体重试 retry 次
+            while (round <= retry && !ok && !cancelled) {
+                round++
+                var src = 0
+                while (src < urls.size && !ok && !cancelled) {
+                    val url = urls[src]
+                    src++
+                    val label = when (src) {
+                        1 -> "GitHub"
+                        else -> "备用线路 ${src - 1}"
+                    }
+                    if (src > 1) {
+                        activity.runOnUiThread {
+                            if (dialog.isShowing) dialog.setMessage("直连超时，改走$label…")
+                        }
+                    }
+                    var conn: HttpURLConnection? = null
+                    try {
+                        conn = URL(url).openConnection() as HttpURLConnection
+                        conn.connectTimeout = 8000
+                        conn.readTimeout = 15000
+                        conn.instanceFollowRedirects = true
+                        conn.setRequestProperty("User-Agent", UA)
+                        conn.connect()
+                        val code = conn.responseCode
+                        android.util.Log.i(TAG, "download $label http=$code len=${conn.contentLength}")
+                        if (code != 200) {
+                            err = "下载失败（HTTP $code）"
+                            continue
+                        }
                         val total = if (conn.contentLength > 0) conn.contentLength.toLong() else release.apkSize
                         conn.inputStream.use { input ->
                             tmp.outputStream().use { out ->
@@ -298,20 +327,26 @@ object UpdateChecker {
                         }
                         if (cancelled) {
                             tmp.delete()
-                        } else if (tmp.length() > 256 * 1024) {
-                            if (target.exists()) target.delete()
-                            ok = tmp.renameTo(target)
-                            if (!ok) err = "写入安装包失败"
                         } else {
-                            tmp.delete()
-                            err = "安装包不完整"
+                            val got = tmp.length()
+                            // 大小必须和远端一致：既挡半截文件，也挡镜像返回的错误网页
+                            val sizeOk = if (release.apkSize > 0) got == release.apkSize else got > 256 * 1024
+                            if (sizeOk) {
+                                if (target.exists()) target.delete()
+                                ok = tmp.renameTo(target)
+                                if (!ok) err = "写入安装包失败"
+                            } else {
+                                android.util.Log.w(TAG, "size mismatch $got != ${release.apkSize} via $label")
+                                tmp.delete()
+                                err = "安装包大小不对（$got 字节）"
+                            }
                         }
+                    } catch (e: Exception) {
+                        err = e.message ?: "下载中断"
+                        tmp.delete()
+                    } finally {
+                        conn?.disconnect()
                     }
-                } catch (e: Exception) {
-                    err = e.message ?: "下载中断"
-                    tmp.delete()
-                } finally {
-                    conn?.disconnect()
                 }
                 if (cancelled) break
             }
