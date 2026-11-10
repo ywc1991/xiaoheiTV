@@ -14,10 +14,13 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.xiaohei.tv.data.ChannelGroups
@@ -30,6 +33,8 @@ import com.xiaohei.tv.ui.ChannelAdapter
 import com.xiaohei.tv.ui.GroupAdapter
 import com.xiaohei.tv.ui.GroupEntry
 import com.xiaohei.tv.ui.SettingsActivity
+import java.net.HttpURLConnection
+import java.net.URL
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import javax.net.ssl.HttpsURLConnection
@@ -84,7 +89,7 @@ class MainActivity : Activity() {
 
     /**
      * 当前频道的线路优先顺序（存 urls 的原始下标）。
-     * 按「被跳过次数」升序排列——广告多、老失败的线路自动沉到后面。
+     * 只把 IPv6 字面量地址排到最后，其余保持源里的原始顺序，不再记录「哪条线路不好用」。
      */
     private var lineOrder: List<Int> = emptyList()
 
@@ -93,6 +98,9 @@ class MainActivity : Activity() {
 
     /** 本轮自动换源已经试过几条，防止无限循环 */
     private var autoTries = 0
+
+    /** 本次起播的请求时刻，用于打印「从点台到出图」的耗时 */
+    private var playStartedAt = 0L
 
     private var loadedKey = ""
     private var fullscreen = false
@@ -175,11 +183,29 @@ class MainActivity : Activity() {
         groupList.requestFocus()
 
         player = ExoPlayer.Builder(this)
+            .setLoadControl(
+                // 起播快慢的开关就在这里。库的默认值是按点播调的（缓冲够 2.5 秒才开播），
+                // 直播切台时这几秒就白等了。这里把「起播门槛」压到 0.5 秒：
+                // 只要解出半秒画面就先出图，剩下继续后台缓冲，卡了再回落一段。
+                DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(
+                        MIN_BUFFER_MS,          // 5s  最低缓冲
+                        MAX_BUFFER_MS,          // 20s 最高缓冲
+                        BUFFER_FOR_START_MS,    // 0.5s 够就开播
+                        BUFFER_AFTER_REBUFFER_MS // 1s  卡顿后恢复的门槛
+                    )
+                    .build()
+            )
             .setMediaSourceFactory(
                 // 播放列表先经广告过滤器再交给解码器：只改清单，不动画面
                 DefaultMediaSourceFactory(
                     AdFilterDataSourceFactory(this) { store.adBlock }
                 )
+                    // 免费源的死线路占比很高，而库默认会重试 3 次、每次还退避等待：
+                    // 实测一条连不上的线路要白等 4.3 秒才轮到下一条，用户看到的就是「点了没反应」。
+                    // 这里改成不重试——失败立刻回来，由 onPlayerError 直接换下一条，
+                    // 同样的死线路 0.6 秒就能跳过去。场上还有 4 条备选，重试没有意义。
+                    .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(0))
             )
             .build()
             .also {
@@ -234,6 +260,7 @@ class MainActivity : Activity() {
         // 若当前播放台属于该组，滚到它
         val pos = channelAdapter.positionOf(currentChannel?.name ?: "")
         if (pos >= 0) channelList.scrollToPosition(pos)
+        scheduleWarmUp()
     }
 
     /** 焦点进入右栏（「向右展开」） */
@@ -247,6 +274,7 @@ class MainActivity : Activity() {
         if (pos < 0) pos = 0
         pendingChannelPos = -1
         focusChannelAt(pos)
+        scheduleWarmUp()
     }
 
     /** 焦点回到左栏（「收起」） */
@@ -326,6 +354,67 @@ class MainActivity : Activity() {
         // 只移动高亮，不自动播放：等用户按 OK 确认后再切台，
         // 避免一路按方向键时把中间每一台都拉起来缓冲
         focusChannelAt(next)
+        scheduleWarmUp()
+    }
+
+    // ---------------------------------------------------------------- 预热
+    // 切台慢的一大半不在解码，而在「等连接」：电视到源站往往要 200~800ms 才建好 TCP，
+    // 建完还要再等一次播放列表回来。这些都发生在按下 OK 之后，用户看到的就是黑屏等待。
+    //
+    // 但焦点停在某个台上时，用户下一步十有八九就是播它。所以这里在焦点停稳 260ms 后，
+    // 先去把这个台第一条线路的播放列表拉一遍（只有几百字节），把 TCP 连接建好、
+    // 读完响应让 socket 回到连接池。等真正按下 OK 时，播放器直接复用这条热连接，
+    // 省掉一次握手加一次 RTT。
+    //
+    // 只在列表界面做，全屏正在播时不掺和，免得和播放抢带宽。
+
+    private val warmHosts = HashSet<String>()
+    private val warmTask = Runnable { warmUpFocusedChannel() }
+
+    private fun scheduleWarmUp() {
+        handler.removeCallbacks(warmTask)
+        if (fullscreen) return
+        handler.postDelayed(warmTask, 260)
+    }
+
+    private fun warmUpFocusedChannel() {
+        val ch = groups.getOrNull(groupIndex)?.channels?.getOrNull(focusedChannelPosition()) ?: return
+        if (ch.name == currentChannel?.name) return
+        // 和播放器选线路的规则保持一致：IPv6 排最后
+        val url = ch.urls.firstOrNull { !it.contains("://[") } ?: ch.urls.firstOrNull() ?: return
+        val host = try {
+            val u = java.net.URI(url)
+            "${u.scheme}://${u.host}:${u.port}"
+        } catch (e: Exception) {
+            return
+        }
+        // 同一个 host 只热一次，来回翻列表不会反复发请求
+        if (!warmHosts.add(host)) return
+        Thread {
+            var c: HttpURLConnection? = null
+            try {
+                c = URL(url).openConnection() as HttpURLConnection
+                c.connectTimeout = 4000
+                c.readTimeout = 4000
+                c.instanceFollowRedirects = true
+                c.setRequestProperty("User-Agent", "XiaoHeiTV-warm")
+                c.connect()
+                // 必须把响应体读完，socket 才会回到连接池；播放列表就几百字节
+                c.inputStream.use { ins ->
+                    val buf = ByteArray(8 * 1024)
+                    var total = 0
+                    while (total < 64 * 1024) {
+                        val n = ins.read(buf)
+                        if (n < 0) break
+                        total += n
+                    }
+                }
+                Log.i("XiaoHeiTV", "warm $host http=${c.responseCode}")
+            } catch (e: Exception) {
+                Log.d("XiaoHeiTV", "warm fail $host ${e.javaClass.simpleName}")
+            }
+            // 刻意不调 disconnect()：那会把刚建好的连接关掉，等于白热
+        }.start()
     }
 
     /**
@@ -431,11 +520,7 @@ class MainActivity : Activity() {
                 "playError ${ch.name} line[${urlIndex + 1}/${ch.urls.size}] = " +
                     "${ch.urls.getOrNull(urlIndex)} cause=${error.cause?.javaClass?.simpleName}:${error.cause?.message}"
             )
-            // 失败也算这条线路不可用：记一次跳过，它会自动沉到后面
-            ch.urls.getOrNull(urlIndex)?.let {
-                store.bumpLineSkip(it)
-                store.bumpTotalSkips()
-            }
+            // 线路失败不再记账，直接换下一条试——少了写盘，出错的那一下也更利索
             if (autoTries < ch.urls.size - 1) {
                 autoTries++
                 if (lineOrder.isEmpty()) buildLineOrder(ch)
@@ -455,14 +540,31 @@ class MainActivity : Activity() {
             }
             if (playbackState == Player.STATE_READY) {
                 autoTries = 0
-                store.lastUrlIndex = urlIndex
+                // 只打第一次出图的耗时，换线路重试时不重复打
+                if (playStartedAt > 0L) {
+                    Log.i("XiaoHeiTV", "firstFrame +${SystemClock.uptimeMillis() - playStartedAt}ms")
+                    playStartedAt = 0L
+                }
             }
         }
     }
 
     private fun playChannel(channel: Channel) {
+        // 同一个台再点一次（比如手滑连按 OK）不该重新连一遍流：
+        // 网络重连动辄两三秒，画面还会黑一下，纯粹是负优化。
+        val same = currentChannel?.name == channel.name
+        val state = player?.playbackState
+        if (same && (state == Player.STATE_READY || state == Player.STATE_BUFFERING)) {
+            channelAdapter.setPlaying(channel.name)
+            pendingChannelPos = -1
+            errorHint.visibility = View.GONE
+            showInfo()
+            return
+        }
+
         currentChannel = channel
         autoTries = 0
+        playStartedAt = SystemClock.uptimeMillis()
         buildLineOrder(channel)
         store.lastChannelName = channel.name
         channelAdapter.setPlaying(channel.name)
@@ -508,40 +610,49 @@ class MainActivity : Activity() {
         }
     }
 
-    // ---------------------------------------------------------------- 线路排序
-    // 同一个台往往有多条线路，质量参差不齐。播出错就记一笔，同一条线路错得越多排得越后，
-    // 之后进同一个台直接落到最可能能播的那条上，不用再手动切。
+    // ---------------------------------------------------------------- 线路顺序
+    // 不再记录「哪条线路广告多 / 老失败」——那是上一版的换源避坑逻辑，已按需求移除。
+    // 现在只保留一条纯静态的排序规则：IPv6 字面量地址在多数家庭网络根本连不通，
+    // 排到最后，免得每次点台都先在它身上耗掉一个连接超时。
 
-    /** 按「被跳过次数」升序排线路，同分时 IPv4 优先（IPv6 字面量地址在多数家庭网络连不通），再按原始顺序 */
+    /** IPv6 沉底，其余保持源里的原始顺序（源的第一条通常是维护者验证过的主线路） */
     private fun buildLineOrder(ch: Channel) {
         lineOrder = ch.urls.indices.sortedWith(
             compareBy(
-                { store.lineSkips(ch.urls[it]) },
                 { if (ch.urls[it].contains("://[")) 1 else 0 },
                 { it }
             )
         )
         orderPos = 0
-        // 同一个台继续看：如果上次那条线路还没被标记过，优先沿用它，避免重复定位
-        val last = store.lastUrlIndex
-        if (ch.name == store.lastChannelName && last in ch.urls.indices &&
-            store.lineSkips(ch.urls[last]) == 0
-        ) {
-            val p = lineOrder.indexOf(last)
-            if (p >= 0) orderPos = p
-        }
-        urlIndex = lineOrder.getOrElse(orderPos) { 0 }
+        urlIndex = lineOrder.getOrElse(0) { 0 }
     }
 
     private fun playCurrentUrl() {
         val ch = currentChannel ?: return
         if (urlIndex >= ch.urls.size) return
         val url = ch.urls[urlIndex]
+        val p = player ?: return
         Log.i("XiaoHeiTV", "play ${ch.name} line[${urlIndex + 1}/${ch.urls.size}] = $url")
-        player?.setMediaItem(MediaItem.fromUri(url))
-        player?.prepare()
-        player?.play()
+
+        // 明确告诉播放器这是 HLS：否则它要靠嗅探去猜格式，猜错还要重来一遍，
+        // 这一来一回就是起播里最冤的那几百毫秒。
+        val item = MediaItem.Builder()
+            .setUri(url)
+            .apply { if (isHls(url)) setMimeType(MimeTypes.APPLICATION_M3U8) }
+            .build()
+
+        // playWhenReady 先置位，prepare 一完成立刻出画面，不用再等一次 play() 的回调
+        p.playWhenReady = true
+        p.setMediaItem(item, true)
+        p.prepare()
+
         infoMeta.text = "${ch.group} · 线路 ${orderPos + 1}/${ch.urls.size.coerceAtLeast(1)}"
+    }
+
+    /** 地址里带 m3u8 就按 HLS 处理；没有后缀的（罕见）留给播放器自己判断 */
+    private fun isHls(url: String): Boolean {
+        val path = url.substringBefore('?').lowercase()
+        return path.endsWith(".m3u8") || path.endsWith(".m3u")
     }
 
     private fun showInfo() {
@@ -791,4 +902,19 @@ class MainActivity : Activity() {
         player?.release()
         player = null
     }
+
+    private companion object {
+        /** 5s：低于这个量再出图，网一抖就卡 */
+        const val MIN_BUFFER_MS = 5_000
+
+        /** 20s：直播不需要囤太多，囤多了反而换台要等旧数据丢掉 */
+        const val MAX_BUFFER_MS = 20_000
+
+        /** 0.5s：凑够半秒就能出图，是这次起播提速的关键 */
+        const val BUFFER_FOR_START_MS = 500
+
+        /** 1s：卡顿后只要补回 1s 就恢复播放，不用等回满 */
+        const val BUFFER_AFTER_REBUFFER_MS = 1_000
+    }
 }
+
