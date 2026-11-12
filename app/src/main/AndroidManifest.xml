@@ -53,5 +53,15 @@
             android:excludeFromRecents="true"
             android:screenOrientation="landscape"
             android:theme="@android:style/Theme.NoTitleBar.Fullscreen" />
+
+        <!-- 无界面基准测量：离屏解码计时，不改变电视画面。
+             用法见 BenchReceiver 注释（adb broadcast 带 url 与 mode 两个参数） -->
+        <receiver
+            android:name=".bench.BenchReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.xiaohei.tv.BENCH" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

@@ -21,7 +21,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
-        android:text="播放源 · 画面 · 关于"
+        android:text="版本更新 · 关于"
         android:textColor="@color/text_tertiary"
         android:textSize="12sp" />
 

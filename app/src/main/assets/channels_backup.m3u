@@ -1,42 +1,69 @@
 #EXTM3U
 #EXTINF:-1 tvg-logo="https://i.imgur.com/TpA3cUl.png" group-title="央视",CCTV-1 综合
 http://74.91.26.218:82/live/cctv1hd.m3u8
-http://69.30.245.50/live/cctv1.m3u8
+http://204.12.221.218:8181/3m1080p/cctv1.m3u8
+http://38.75.136.137:98/gslb/dsdqbv/cctv1hd.m3u8?auth=test20251009
+http://173.208.212.130:8181/720p/cctv1.m3u8
 #EXTINF:-1 tvg-logo="https://i.imgur.com/ILamhwU.png" group-title="央视",CCTV-2 财经
 http://74.91.26.218:82/live/cctv2hd.m3u8
+http://107.150.60.122/live/cctv2hd.m3u8
+http://204.12.221.218:8181/3m1080p/cctv2.m3u8
+http://192.151.150.154/live/cctv2hd.m3u8
 #EXTINF:-1 tvg-logo="https://i.imgur.com/iFlkIuw.png" group-title="央视",CCTV-3 综艺
 http://74.91.26.218:82/live/cctv3hd.m3u8
-#EXTINF:-1 tvg-logo="https://i.imgur.com/fxusYlX.png" group-title="央视",CCTV-4K 超高清
-http://198.204.240.250:82/live/cctv4k.m3u8
+http://107.150.60.122/live/cctv3hd.m3u8
+http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv3hd
 #EXTINF:-1 tvg-logo="https://i.imgur.com/OK8mdJV.png" group-title="央视",CCTV-5+ 体育赛事
-https://myip.pdtvhd.com/Sports/streams/CCTV5pul.m3u8
+http://219.147.245.238:25480/newlive/live/hls/6/live.m3u8
 #EXTINF:-1 tvg-logo="https://i.imgur.com/rFiaef7.png" group-title="央视",CCTV-6 电影
-http://69.30.245.50/live/cctv6.m3u8
+http://74.91.26.218:82/live/cctv6hd.m3u8
+http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv6hd
+http://198.204.228.26/live/cctv6hd.m3u8
 #EXTINF:-1 tvg-logo="https://i.imgur.com/CKcPMQC.png" group-title="央视",CCTV-7 国防军事
 http://74.91.26.218:82/live/cctv7hd.m3u8
+http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv7hd
+http://207.56.13.146:81/cdnlive/cctv7.m3u8
+http://107.150.60.122/live/cctv7hd.m3u8
 #EXTINF:-1 tvg-logo="https://i.imgur.com/GyHaZ8X.png" group-title="央视",CCTV-8 电视剧
 http://74.91.26.218:82/live/cctv8hd.m3u8
+http://173.208.212.130:8181/720p/cctv8.m3u8
+http://207.56.13.146:81/cdnlive/cctv8.m3u8
 #EXTINF:-1 tvg-logo="https://i.imgur.com/fxVPMJF.png" group-title="央视",CCTV-8K 超高清
 http://192.151.150.154/live/cctv8k.m3u8
 #EXTINF:-1 tvg-logo="https://i.imgur.com/3tivvMm.png" group-title="央视",CCTV-9 纪录
 https://xykt-fix.github.io/Y77.m3u8
+http://74.91.26.218:82/live/cctv9hd.m3u8
+http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv9hd
+http://192.151.150.154/live/cctv9hd.m3u8
+http://107.150.60.122/live/cctv9hd.m3u8
 #EXTINF:-1 tvg-logo="https://i.imgur.com/sSSO7UD.png" group-title="央视",CCTV-10 科教
 http://74.91.26.218:82/live/cctv10hd.m3u8
+http://38.75.136.137:98/gslb/dsdqbv/cctv10hd.m3u8?auth=test20251009
 #EXTINF:-1 tvg-logo="https://i.imgur.com/CjOWx7L.png" group-title="央视",CCTV-11 戏曲
 http://74.91.26.218:82/live/cctv11hd.m3u8
+http://38.75.136.137:98/gslb/dsdqbv/cctv11hd.m3u8?auth=test20251009
 #EXTINF:-1 tvg-logo="https://i.imgur.com/3yTuiOM.png" group-title="央视",CCTV-12 社会与法
 http://74.91.26.218:82/live/cctv12hd.m3u8
 #EXTINF:-1 tvg-logo="https://i.imgur.com/6MTar6J.png" group-title="央视",CCTV-13 新闻
 http://74.91.26.218:82/live/cctv13hd.m3u8
-http://go.bkpcp.top/mg/cctv13
+http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv13hd
+http://38.75.136.137:98/gslb/dsdqbv/cctv13hd.m3u8?auth=test20251009
 #EXTINF:-1 tvg-logo="https://i.imgur.com/c5SXW7i.png" group-title="央视",CCTV-14 少儿
 http://74.91.26.218:82/live/cctv14hd.m3u8
+http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv14hd
+http://204.12.221.218:8181/3m1080p/cctv14.m3u8
+http://38.75.136.137:98/gslb/dsdqbv/cctv14hd.m3u8?auth=test20251009
 #EXTINF:-1 tvg-logo="https://i.imgur.com/CCV0eRG.png" group-title="央视",CCTV-15 音乐
 http://74.91.26.218:82/live/cctv15hd.m3u8
+http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv15hd
+http://38.75.136.137:98/gslb/dsdqbv/cctv15hd.m3u8?auth=test20251009
+http://204.12.221.218:8181/3m1080p/cctv15.m3u8
 #EXTINF:-1 tvg-logo="https://i.imgur.com/ZzV6JQp.png" group-title="央视",CCTV-16 奥林匹克
 http://74.91.26.218:82/live/cctv16hd.m3u8
+http://38.75.136.137:98/gslb/dsdqbv/cctv16hd.m3u8?auth=test20251009
 #EXTINF:-1 tvg-logo="https://i.imgur.com/jSQURxS.png" group-title="央视",CCTV-17 农业农村
 http://74.91.26.218:82/live/cctv17hd.m3u8
+http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv17hd
 #EXTINF:-1 tvg-logo="https://i.imgur.com/WK3keM9.png" group-title="央视",CCTV-Billiards
 http://38.75.136.137:98/gslb/dsdqpub/ystq.m3u8?auth=testpub
 #EXTINF:-1 tvg-logo="https://i.imgur.com/Paig8gG.png" group-title="央视",CCTV-Culture of Quality SD

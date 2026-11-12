@@ -22,10 +22,14 @@ class AdFilterDataSourceFactory(
     private val userAgent: String = Util.getUserAgent(context, "XiaoHeiTV")
 
     override fun createDataSource(): DataSource {
-        val upstream = DefaultHttpDataSource.Factory()
+        val http = DefaultHttpDataSource.Factory()
             .setUserAgent(userAgent)
+            // 库默认连接超时 8 秒，对直播源来说太客气了：死线路要卡满 8 秒才报错。
+            // 压到 3 秒，配合「不重试」和线路直通表，死链让位更快。
+            .setConnectTimeoutMs(3_000)
+            .setReadTimeoutMs(15_000)
             .createDataSource()
-        return AdFilterDataSource(upstream, enabled)
+        return AdFilterDataSource(http, enabled)
     }
 }
 
@@ -54,7 +58,11 @@ private class AdFilterDataSource(
         val raw = readAll()
         val text = String(raw, Charsets.UTF_8)
         val bytes = AdFilter.filter(text, dataSpec.uri.toString()).toByteArray(Charsets.UTF_8)
-        Log.d(TAG, "拦截播放列表 ${dataSpec.uri} ${raw.size}B -> ${bytes.size}B")
+        // 直播清单每 10 秒刷新一次，两个播放器同时跑会把日志刷满、把真正的切台记录冲掉。
+        // 只有确实剔掉了广告分片才打日志，其余静默。
+        if (raw.size != bytes.size) {
+            Log.d(TAG, "已过滤播放列表 ${dataSpec.uri} ${raw.size}B -> ${bytes.size}B")
+        }
         filtered = bytes
         offset = 0
         return bytes.size.toLong()
