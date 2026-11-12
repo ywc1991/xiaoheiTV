@@ -31,7 +31,9 @@ import com.xiaohei.tv.data.EpgEntry
 import com.xiaohei.tv.data.EpgRepository
 import com.xiaohei.tv.data.SourceStore
 import com.xiaohei.tv.model.Channel
+import com.xiaohei.tv.player.AdFilter
 import com.xiaohei.tv.player.AdFilterDataSourceFactory
+import com.xiaohei.tv.player.AdRules
 import com.xiaohei.tv.player.TlsRelax
 import com.xiaohei.tv.ui.ChannelAdapter
 import com.xiaohei.tv.ui.GroupAdapter
@@ -208,6 +210,10 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         store = SourceStore(this)
+        // 只在冷启动读一次本地规则（内存快照，清单解析时零 IO）；不改线路、不动画质
+        AdRules.update(store.adRules)
+        // 把首次正则编译/类加载的 10~18ms 挪到启动阶段，播放中不出现首次开销
+        AdFilter.warmUp()
 
         listPanel = findViewById(R.id.listPanel)
         groupList = findViewById(R.id.groupList)

@@ -60,6 +60,11 @@ class SourceStore(context: Context) {
         get() = prefs.getBoolean("adBlock", true)
         set(v) = prefs.edit().putBoolean("adBlock", v).apply()
 
+    /** 后台下发的广告规则文本（纯文本，每行 host:xxx / token:xxx）。空串表示只用内置规则。 */
+    var adRules: String
+        get() = prefs.getString("adRules", "") ?: ""
+        set(v) = prefs.edit().putString("adRules", v).apply()
+
     // ---------------------------------------------------------------- 线路直通表
     // 只记「上次真正出过图的那条线路」，让下次起播直接跳过慢线路/死线路。
     // 不做失败计数、不屏蔽任何线路、无 UI，和已移除的避坑模块无关。

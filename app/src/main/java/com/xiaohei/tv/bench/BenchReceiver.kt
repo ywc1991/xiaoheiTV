@@ -18,7 +18,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import com.xiaohei.tv.data.SourceStore
 import com.xiaohei.tv.player.AdFilterDataSourceFactory
+import com.xiaohei.tv.player.AdRules
 import com.xiaohei.tv.player.TlsRelax
 
 /**
@@ -37,12 +39,30 @@ import com.xiaohei.tv.player.TlsRelax
 class BenchReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        val ctx = context.applicationContext
+
+        // 纯后台诊断：不碰画面、不起播放器，logcat 里直接读统计与规则
+        when (intent.getStringExtra("action")) {
+            "stats" -> {
+                if (intent.getBooleanExtra("reset", false)) AdRules.resetStats()
+                Log.i(TAG, "adFilter stats ${AdRules.snapshot()}")
+                Log.i(TAG, "adFilter rules ${AdRules.rulesText().ifEmpty { "(仅内置规则)" }}")
+                return
+            }
+            "adrules" -> {
+                val text = intent.getStringExtra("rules") ?: intent.getStringExtra("json") ?: ""
+                val n = AdRules.update(text)
+                SourceStore(ctx).adRules = text
+                Log.i(TAG, "adFilter 规则已下发 $n 条 | ${AdRules.snapshot()}")
+                return
+            }
+        }
+
         val url = intent.getStringExtra("url") ?: run {
             Log.w(TAG, "bench 缺少 url")
             return
         }
         val surfaceMode = intent.getStringExtra("surface") ?: "offscreen"
-        val ctx = context.applicationContext
         TlsRelax.apply()
         val url2 = intent.getStringExtra("url2")
         Handler(Looper.getMainLooper()).post {

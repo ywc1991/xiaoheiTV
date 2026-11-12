@@ -57,11 +57,14 @@ private class AdFilterDataSource(
 
         val raw = readAll()
         val text = String(raw, Charsets.UTF_8)
+        // 诊断：清单过滤耗时是切台链路的一部分，只在真的剔掉广告时打，便于后台核对没有拖慢播放
+        val t0 = System.nanoTime()
         val bytes = AdFilter.filter(text, dataSpec.uri.toString()).toByteArray(Charsets.UTF_8)
+        val costUs = (System.nanoTime() - t0) / 1000L
         // 直播清单每 10 秒刷新一次，两个播放器同时跑会把日志刷满、把真正的切台记录冲掉。
         // 只有确实剔掉了广告分片才打日志，其余静默。
         if (raw.size != bytes.size) {
-            Log.d(TAG, "已过滤播放列表 ${dataSpec.uri} ${raw.size}B -> ${bytes.size}B")
+            Log.d(TAG, "已过滤播放列表 ${dataSpec.uri} ${raw.size}B -> ${bytes.size}B 耗时 ${costUs}us")
         }
         filtered = bytes
         offset = 0
