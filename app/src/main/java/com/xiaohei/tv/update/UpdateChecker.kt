@@ -3,8 +3,10 @@ package com.xiaohei.tv.update
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.ProgressDialog
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -185,8 +187,8 @@ object UpdateChecker {
      */
     fun downloadAndInstall(activity: Activity, release: Release, onNeedPermission: () -> Unit = {}) {
         // 先确认能装，再决定是直装本地包还是重新下载
-        val canInstall = Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
-            activity.packageManager.canRequestPackageInstalls()
+        val canInstall = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) true
+        else runCatching { activity.packageManager.canRequestPackageInstalls() }.getOrDefault(true)
         android.util.Log.i(TAG, "downloadAndInstall v${release.version} canInstall=$canInstall")
         if (!canInstall) {
             onNeedPermission()
@@ -203,7 +205,7 @@ object UpdateChecker {
 
     /** 弹「去设置里开启安装未知应用」。 */
     fun showPermissionDialog(activity: Activity) {
-        AlertDialog.Builder(activity)
+        val builder = AlertDialog.Builder(activity)
             .setTitle("需要「安装未知应用」权限")
             .setMessage("系统要求先允许小黑TV安装应用。开启后返回本页，再点一次「下载并安装」即可。")
             .setPositiveButton("去开启") { _, _ ->
@@ -227,7 +229,11 @@ object UpdateChecker {
                 }
             }
             .setNegativeButton("取消", null)
-            .show()
+        // TCL T-UI / 电视卫士这类定制主题上，系统对话框偶尔会因主题资源缺失抛异常；
+        // 提示框挂了不该挡住用户去开权限。
+        runCatching { builder.show() }.onFailure {
+            toast(activity, "请到系统设置里允许小黑TV安装未知来源应用")
+        }
     }
 
     /**
@@ -302,7 +308,13 @@ object UpdateChecker {
             setButton(AlertDialog.BUTTON_NEGATIVE, "取消") { _, _ -> cancel() }
         }
         dialog.setOnCancelListener { tmp.delete() }
-        dialog.show()
+        // 厂商定制主题（T-UI 4.0 / 电视卫士）里 ProgressDialog 可能因主题资源缺失直接抛异常。
+        // 对话框只是进度提示，挂了也要把安装包下完装好，不能让升级功能整个失效。
+        var uiFailed = false
+        runCatching { dialog.show() }.onFailure {
+            uiFailed = true
+            android.util.Log.w(TAG, "进度框无法显示，改为静默下载", it)
+        }
 
         Thread {
             var ok = false
@@ -319,7 +331,9 @@ object UpdateChecker {
                     val label = cand.label
                     if (src > 1) {
                         activity.runOnUiThread {
-                            if (dialog.isShowing) dialog.setMessage("上一路不通，改走$label…")
+                            if (!activity.isFinishing && !uiFailed && dialog.isShowing) {
+                                dialog.setMessage("上一路不通，改走$label…")
+                            }
                         }
                     }
                     var conn: HttpURLConnection? = null
@@ -338,7 +352,7 @@ object UpdateChecker {
                                 var done = 0L
                                 var lastPct = -1
                                 while (true) {
-                                    if (dialog.isShowing.not()) {
+                                    if (!uiFailed && dialog.isShowing.not()) {
                                         cancelled = true
                                         break
                                     }
@@ -350,7 +364,7 @@ object UpdateChecker {
                                     if (pct != lastPct) {
                                         lastPct = pct
                                         activity.runOnUiThread {
-                                            if (dialog.isShowing) {
+                                            if (!activity.isFinishing && !uiFailed && dialog.isShowing) {
                                                 dialog.progress = pct
                                                 dialog.setMessage(
                                                     if (release.apkSize > 0)
@@ -391,17 +405,19 @@ object UpdateChecker {
 
             activity.runOnUiThread {
                 if (activity.isFinishing) return@runOnUiThread
-                try { dialog.dismiss() } catch (_: Exception) {}
+                if (!uiFailed) runCatching { dialog.dismiss() }
                 when {
                     ok -> install(activity, target)
                     cancelled -> toast(activity, "已取消下载")
                     else -> {
-                        AlertDialog.Builder(activity)
+                        val dlg = AlertDialog.Builder(activity)
                             .setTitle("下载失败")
                             .setMessage(err.ifEmpty { "网络异常" } + "\n\n可以稍后重试，或到官网手动下载安装包。")
                             .setPositiveButton("重试") { _, _ -> startDownload(activity, release, 0) }
                             .setNegativeButton("取消", null)
-                            .show()
+                        runCatching { dlg.show() }.onFailure {
+                            toast(activity, "下载失败：" + err.ifEmpty { "网络异常" })
+                        }
                     }
                 }
             }
@@ -425,6 +441,21 @@ object UpdateChecker {
                 setDataAndType(uri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                // 部分厂商安装器只读 clipData 取 URI（TCL 电视卫士 / TV+OS 常见）
+                clipData = ClipData.newRawUri("APK", uri)
+            }
+            // 定制安装器有时不继承 FLAG_GRANT_READ_URI_PERMISSION，导致「点了没反应」
+            // 或「解析软件包时出现问题」。显式把读权限授予所有能处理它的 Activity。
+            runCatching {
+                activity.packageManager
+                    .queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+                    .forEach { ri ->
+                        activity.grantUriPermission(
+                            ri.activityInfo.packageName,
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    }
             }
             activity.startActivity(intent)
         } catch (e: Exception) {
@@ -461,6 +492,7 @@ object UpdateChecker {
         return null
     }
 
-    private fun toast(ctx: Context, msg: String) =
+    private fun toast(ctx: Context, msg: String) = runCatching {
         Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+    }
 }

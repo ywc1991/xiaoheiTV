@@ -195,6 +195,9 @@ class MainActivity : Activity() {
     /** 启动后 1 秒内忽略按键，防止系统残留事件误触 */
     private fun justLaunched(): Boolean = SystemClock.uptimeMillis() - startTime < 1000
 
+    /** 设备画像判定的保守档：老电视 / 小内存 / 少硬解，少开一路预播并关掉异步解码队列 */
+    private var conservative = false
+
     /** Activity 是否还活着：所有延迟任务执行前都查它，避免销毁后访问 View / 已释放的播放器 */
     private var destroyed = false
 
@@ -218,6 +221,8 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashGuard.notePhase("onCreate")
+        conservative = DeviceProfile.isConservative(this)
+        Log.i("XiaoHeiTV", "device ${DeviceProfile.summary(this)}")
         relaxTls()
         setContentView(R.layout.activity_main)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -269,9 +274,9 @@ class MainActivity : Activity() {
         // 预播槽数量由设备能力与历史崩溃决定：正常电视仍是 2 个（切台秒切不变），
         // 低内存或反复崩溃过的盒子自动降到 1 个甚至 0 个，避免解码器实例打满而闪退。
         val slots = CrashGuard.slotCount(this)
-        Log.i("XiaoHeiTV", "stability level=${CrashGuard.level(this)} slots=$slots ${CrashGuard.deviceInfo(this)}")
+        Log.i("XiaoHeiTV", "stability level=${CrashGuard.level(this)} slots=$slots conservative=$conservative ${CrashGuard.deviceInfo(this)}")
         repeat(slots) { i ->
-            val p = newPlayer().also {
+            val p = newPlayer(forPrebuffer = true).also {
                 it.volume = 0f
                 setAudioEnabled(it, false)
                 attach(it)
@@ -440,7 +445,9 @@ class MainActivity : Activity() {
     private fun scheduleWarmUp() {
         handler.removeCallbacks(warmTask)
         if (fullscreen) return
-        handler.postDelayed(warmTask, 220)
+        // 保守档把列表悬停预热放慢一点：快速刷频道时不至于每划过一个台就重建一路解码器。
+        // 只是延迟变化，预热本身仍在，点台的起播链路没动。
+        handler.postDelayed(warmTask, if (conservative) 500L else 220L)
     }
 
     private fun warmUpFocusedChannel() {
@@ -566,7 +573,7 @@ class MainActivity : Activity() {
         }.start()
     }
 
-    private fun newPlayer(): ExoPlayer =
+    private fun newPlayer(forPrebuffer: Boolean = false): ExoPlayer =
         ExoPlayer.Builder(
             this,
             // 老盒子 / 厂商定制固件上主解码器经常初始化失败，允许回退到备用解码器，
@@ -574,12 +581,19 @@ class MainActivity : Activity() {
             DefaultRenderersFactory(this)
                 .setEnableDecoderFallback(true)
                 .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+                .apply {
+                    // Android 8.0/8.1（TCL TV+OS 4.0 就在此列）厂商 MediaCodec 的异步回调
+                    // 实现普遍有缺陷：切台时两个解码器交接 Surface，异步队列里残留的 buffer
+                    // 会触发 CodecException 甚至 native crash。强制走同步队列更稳。
+                    // 标准档不动，切台速度不受影响。
+                    if (conservative) forceDisableMediaCodecAsynchronousQueueing()
+                }
         )
             // 关键：不接管音频焦点。否则预播播放器一开始缓冲就会把焦点抢走，
             // 正在看的那个台会「莫名其妙静音」——这正是双播放器最容易踩的坑。
             // 声音由我们自己用音量控制：预播的恒为 0，在播的恒为 1。
             .setAudioAttributes(AudioAttributes.DEFAULT, /* handleAudioFocus = */ false)
-            .setLoadControl(buildLoadControl())
+            .setLoadControl(buildLoadControl(forPrebuffer))
             .setMediaSourceFactory(
                 // 播放列表先经广告过滤器再交给解码器：只改清单，不动画面
                 DefaultMediaSourceFactory(AdFilterDataSourceFactory(this) { store.adBlock })
@@ -641,6 +655,12 @@ class MainActivity : Activity() {
             "playError ${ch.name} line[${urlIndex + 1}/${ch.urls.size}] = " +
                 "${ch.urls.getOrNull(urlIndex)} cause=${error.cause?.javaClass?.simpleName}:${error.cause?.message}"
         )
+        // 解码器本身失败（不是网络/线路问题）说明这台机器的 MediaCodec 撑不住。
+        // 连续两次就自动降到更保守的档位，不用等进程真的崩掉。
+        if (isDecoderFailure(error)) {
+            Log.w("XiaoHeiTV", "decoderFailure code=${error.errorCode} cause=${error.cause?.javaClass?.name}")
+            CrashGuard.noteDecoderFailure(this)
+        }
         // 上次能用、这次连不上了：把直通记录作废，别让下一个台继续踩它
         if (goodUrlFor(ch.name) == ch.urls.getOrNull(urlIndex)) forgetGoodLine(ch.name)
         // 线路失败不再记账，直接换下一条试
@@ -663,6 +683,25 @@ class MainActivity : Activity() {
             infoMeta.text = "${ch.group} · 线路全部失败"
             cancelPrebuffer()
         }
+    }
+
+    /** 区分「解码器不兼容」与「线路连不上」：前者要降档，后者只需换线路 */
+    private fun isDecoderFailure(e: PlaybackException): Boolean {
+        when (e.errorCode) {
+            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+            PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+            PlaybackException.ERROR_CODE_DECODING_FAILED,
+            PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+            PlaybackException.ERROR_CODE_DECODING_RESOURCES_RECLAIMED -> return true
+        }
+        var t: Throwable? = e.cause
+        var depth = 0
+        while (t != null && depth++ < 6) {
+            val n = t.javaClass.name
+            if (n.contains("MediaCodec") || n.contains("DecoderInitialization")) return true
+            t = t.cause
+        }
+        return false
     }
 
     private fun onActiveState(playbackState: Int) {
@@ -787,14 +826,16 @@ class MainActivity : Activity() {
             swapAt = SystemClock.uptimeMillis()
             old.volume = 0f
             setAudioEnabled(old, false)
+            // 顺序很关键：先把旧解码器连同它占着的 Surface 一起还回去，再把新播放器接到画面。
+            // 原来是先 playerView.player = np 再 stop 旧播放器——在 Android 8 厂商固件上，
+            // 这一瞬间两个 MediaCodec 同时绑同一个 Surface，会抛 CodecException / native crash。
+            // 这正是 TCL 75T6 这类老电视「换台闪退」最典型的现场。
+            old.stop()
+            runCatching { old.clearMediaItems() }
             setAudioEnabled(np, true)
             np.volume = 1f
             playerView.player = np
             np.playWhenReady = true
-            // 老播放器立刻停掉并清掉媒体项：既省带宽，也把解码器实例还回去。
-            // 低配盒子上第三个解码器申请失败是换台闪退最常见的原因。
-            old.stop()
-            runCatching { old.clearMediaItems() }
             slot.channel = null
             slot.url = null
             slot.failed = false
@@ -946,7 +987,7 @@ class MainActivity : Activity() {
                 used += slot.index
                 // 两路流别同时冷启动：错峰固定在槽位上，
                 // 即便被重复调度也只会「替换」第二槽的任务，不会把它提前。
-                val delay = SLOT_STAGGER_MS * slot.index
+                val delay = staggerMs() * slot.index
                 if (delay == 0L) {
                     startPrebuffer(slot, target, url)
                 } else {
@@ -1069,12 +1110,14 @@ class MainActivity : Activity() {
     }
 
     /** 起播门槛：库默认按点播调（缓冲够 2.5 秒才开播），直播切台时这几秒就白等了 */
-    private fun buildLoadControl(): DefaultLoadControl =
+    private fun buildLoadControl(forPrebuffer: Boolean): DefaultLoadControl =
         DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 MIN_BUFFER_MS,          // 5s  最低缓冲
-                MAX_BUFFER_MS,          // 20s 最高缓冲
-                BUFFER_FOR_START_MS,    // 0.5s 够就开播
+                // 保守档的预播只是「备用」，别让它囤 15 秒视频占满 2GB 内存；
+                // 主播放器仍是 15s，用户正在看的画面一点不受影响。
+                if (forPrebuffer && conservative) PRE_MAX_BUFFER_MS else MAX_BUFFER_MS,
+                BUFFER_FOR_START_MS,    // 0.3s 够就开播
                 BUFFER_AFTER_REBUFFER_MS // 1s  卡顿后恢复的门槛
             )
             // 时间优先于字节数：网速一般时先凑够「能出图的时长」，而不是非等够字节量
@@ -1114,7 +1157,7 @@ class MainActivity : Activity() {
             // 新台还在缓冲时画面是静帧，不给提示用户会以为按键没生效、又按一次
             showZapPending(ch)
             handler.removeCallbacks(prebufferTimeout)
-            handler.postDelayed(prebufferTimeout, PREBUFFER_TIMEOUT_MS)
+            handler.postDelayed(prebufferTimeout, prebufferTimeoutMs())
             return
         }
 
@@ -1129,7 +1172,7 @@ class MainActivity : Activity() {
         // 实测 1 秒内连按 40 次会建 40 条流，老盒子的解码器实例和内存直接被打满。
         // 预播命中的热切换不经过这里；正常速度的切台（间隔 >120ms）也完全不受影响。
         val now = SystemClock.uptimeMillis()
-        val wait = DIRECT_COALESCE_MS - (now - lastDirectAt)
+        val wait = coalesceMs() - (now - lastDirectAt)
         if (lastDirectAt > 0L && wait > 0L) {
             pendingDirect?.let { handler.removeCallbacks(it) }
             val task = Runnable { playDirectNow(ch, url) }
@@ -1485,6 +1528,12 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
+    // 保守档把「同一时刻并存两路流」的窗口压到最短：更早接管、更宽的连按合并、
+    // 更长的错峰，减少 2GB 老电视上解码器反复申请/释放的次数。预播命中仍是热切换。
+    private fun staggerMs(): Long = if (conservative) 1_200L else SLOT_STAGGER_MS
+    private fun coalesceMs(): Long = if (conservative) 200L else DIRECT_COALESCE_MS
+    private fun prebufferTimeoutMs(): Long = if (conservative) 2_800L else PREBUFFER_TIMEOUT_MS
+
     private companion object {
         /** 5s：低于这个量再出图，网一抖就卡 */
         const val MIN_BUFFER_MS = 5_000
@@ -1500,6 +1549,9 @@ class MainActivity : Activity() {
 
         /** 3.5s：预播迟迟不就绪就别让用户盯着静帧了（超时改为提前接管，不丢弃已缓冲数据） */
         const val PREBUFFER_TIMEOUT_MS = 3_500L
+
+        /** 预播播放器在保守档的上限：主播放器仍是 15s */
+        const val PRE_MAX_BUFFER_MS = 8_000
 
         /** 第二槽错峰启动，避免两路流同时冷启动互相抢带宽 */
         const val SLOT_STAGGER_MS = 700L

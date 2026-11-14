@@ -19,6 +19,7 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import com.xiaohei.tv.CrashGuard
+import com.xiaohei.tv.DeviceProfile
 import com.xiaohei.tv.data.SourceStore
 import com.xiaohei.tv.player.AdFilterDataSourceFactory
 import com.xiaohei.tv.player.AdRules
@@ -58,6 +59,18 @@ class BenchReceiver : BroadcastReceiver() {
                 return
             }
             // 别人家的电视闪退时，只要能 adb 连一下就能把完整堆栈导出来精确定位
+            "profile" -> {
+                val force = intent.getStringExtra("force")
+                when (force) {
+                    "conservative", "1" -> DeviceProfile.setForced(ctx, 1)
+                    "standard", "0" -> DeviceProfile.setForced(ctx, 0)
+                    "auto", "-1" -> DeviceProfile.setForced(ctx, -1)
+                }
+                Log.i(TAG, "device ${DeviceProfile.summary(ctx)}")
+                Log.i(TAG, "stability tier=${DeviceProfile.tier(ctx)} level=${CrashGuard.level(ctx)} " +
+                    "slots=${CrashGuard.slotCount(ctx)} crashInWindow=${CrashGuard.crashCount(ctx)}")
+                return
+            }
             "crash" -> {
                 Log.i(TAG, "stability level=${CrashGuard.level(ctx)} slots=${CrashGuard.slotCount(ctx)} " +
                     "crashInWindow=${CrashGuard.crashCount(ctx)} ${CrashGuard.deviceInfo(ctx)}")

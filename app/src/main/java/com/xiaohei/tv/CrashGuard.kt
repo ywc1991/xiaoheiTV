@@ -1,8 +1,6 @@
 package com.xiaohei.tv
 
-import android.app.ActivityManager
 import android.content.Context
-import android.os.Build
 import android.util.Log
 import java.io.File
 import java.io.PrintWriter
@@ -22,7 +20,8 @@ import java.util.Locale
  *     下次可用后台广播导出（BenchReceiver action=crash），不上传任何数据。
  *  2. 反复崩溃自动降级：10 分钟内崩 2 次就把「双槽预播」降成单槽，再崩就干脆关掉预播，
  *     回到一台一个播放器的最稳路径。正常设备完全不受影响，切台速度也不变。
- *  3. 低内存设备启动即少开一个槽，别等它崩了才降级。
+ *  3. 按设备画像（Android 版本 / 物理内存 / 堆上限 / 硬解码器数）启动即收敛预播槽数量，
+ *     别等它崩了才降级；TCL 75T6 这类 Android 8 + 2GB 老电视默认只开 1 槽。
  *
  * 这是兜底而不是修复：真正的原因仍要靠导出的堆栈定位。
  */
@@ -34,6 +33,7 @@ object CrashGuard {
     private const val KEY_COUNT = "count"
     private const val KEY_LAST = "lastAt"
     private const val KEY_MANUAL = "manual"
+    private const val KEY_DECODER_FAIL = "decoderFail"
     private const val WINDOW_MS = 10 * 60 * 1000L
     private const val CRASHES_PER_STEP = 2
     private const val MAX_LEVEL = 2
@@ -87,7 +87,8 @@ object CrashGuard {
 
         val text = buildString {
             append("time=").append(fmt.format(Date(now))).append('\n')
-            append("device=").append(deviceInfo(app)).append('\n')
+            append("device=").append(DeviceProfile.summary(app)).append('\n')
+            append("slots=").append(slotCount(app)).append('\n')
             append("thread=").append(thread.name).append('\n')
             append("channel=").append(lastChannel).append('\n')
             append("phase=").append(lastPhase).append('\n')
@@ -120,12 +121,19 @@ object CrashGuard {
         prefs(c).edit()
             .putInt(KEY_LEVEL, 0)
             .putInt(KEY_COUNT, 0)
+            .putInt(KEY_DECODER_FAIL, 0)
             .putInt(KEY_MANUAL, -1)
             .apply()
 
     fun crashCount(c: Context): Int = prefs(c).getInt(KEY_COUNT, 0)
 
-    /** 本次启动要创建几个预播槽。正常高端设备仍是 2 个，切台秒切不变。 */
+    /**
+     * 本次启动要创建几个预播槽。
+     *
+     * 手动 level=0 是「强制标准」，忽略设备画像；其余情况按档位收敛：
+     * 保守档（Android 8.1 及以下 / ≤2.5GB / 硬解 ≤2 路，例如 TCL 75T6）最多 1 槽，
+     * 这样同时最多 2 路解码，不再出现 3 个解码器抢实例的换台闪退。
+     */
     fun slotCount(c: Context): Int {
         val m = manual(c)
         val lv = if (m >= 0) m.coerceIn(0, MAX_LEVEL) else level(c)
@@ -134,25 +142,29 @@ object CrashGuard {
             lv >= 1 -> 1
             else -> 2
         }
-        return if (base == 2 && isLimitedDevice(c)) 1 else base
+        if (base == 0) return 0
+        if (m == 0) return 2 // 用户在「关于」里主动恢复标准模式
+        return if (DeviceProfile.isConservative(c)) minOf(base, 1) else base
     }
 
-    private fun isLimitedDevice(c: Context): Boolean = try {
-        val am = c.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-        if (am == null) false
-        else (Build.VERSION.SDK_INT >= 19 && am.isLowRamDevice) || am.memoryClass <= 64
-    } catch (_: Exception) {
-        false
-    }
-
-    fun deviceInfo(c: Context): String = buildString {
-        append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
-        append(" / Android ").append(Build.VERSION.RELEASE).append(" (API ").append(Build.VERSION.SDK_INT).append(')')
-        runCatching {
-            val am = c.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-            if (am != null) append(" / memClass=").append(am.memoryClass)
+    /**
+     * 解码器运行时失败（不是线路问题）是「这台机器撑不住」的强信号。
+     * 累计 2 次就自动降一级，不等进程真的崩掉。
+     */
+    fun noteDecoderFailure(c: Context) {
+        val p = prefs(c)
+        val n = p.getInt(KEY_DECODER_FAIL, 0) + 1
+        var lv = p.getInt(KEY_LEVEL, 0).coerceIn(0, MAX_LEVEL)
+        var next = n
+        if (n >= 2 && lv < MAX_LEVEL) {
+            lv = if (lv >= 1) MAX_LEVEL else 1
+            next = 0
+            Log.w(TAG, "解码器连续失败，自动降级到 level=$lv（预播槽 ${if (lv >= 2) 0 else 1}）")
         }
+        p.edit().putInt(KEY_DECODER_FAIL, next).putInt(KEY_LEVEL, lv).commit()
     }
+
+    fun deviceInfo(c: Context): String = DeviceProfile.summary(c)
 
     /** 最近一次崩溃的摘要，给「关于」页显示 */
     fun recentSummary(c: Context): String {

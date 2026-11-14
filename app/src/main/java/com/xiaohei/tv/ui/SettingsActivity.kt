@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.xiaohei.tv.CrashGuard
+import com.xiaohei.tv.DeviceProfile
 import com.xiaohei.tv.R
 import com.xiaohei.tv.update.UpdateChecker
 
@@ -130,7 +131,7 @@ class SettingsActivity : Activity() {
                 if (notes.length > 600) append("…")
             }
         }
-        AlertDialog.Builder(this)
+        val dlg = AlertDialog.Builder(this)
             .setTitle("发现新版本 v${r.version}")
             .setMessage(body)
             .setPositiveButton("下载并安装") { _, _ ->
@@ -139,16 +140,19 @@ class SettingsActivity : Activity() {
                 }
             }
             .setNegativeButton("以后再说", null)
-            .show()
+        // 定制 TV 主题上对话框可能抛异常，不能让「检查更新」整个入口失效
+        if (runCatching { dlg.show() }.isFailure) toast("发现新版本 v${r.version}，可到官网手动下载")
     }
 
     private fun showAbout() {
         val v = UpdateChecker.currentVersion(this)
         val lv = CrashGuard.level(this)
         val slots = CrashGuard.slotCount(this)
+        val conservative = DeviceProfile.isConservative(this@SettingsActivity)
         val stability = buildString {
             append("\n\n运行状态：")
-            append(if (lv == 0) "标准（预播 $slots 路）" else "兼容模式 L$lv（预播 $slots 路，减少解码器占用）")
+            append(if (lv == 0 && !conservative) "标准（预播 $slots 路）"
+            else "兼容模式（预播 $slots 路，减少解码器占用）")
             append("\n设备：").append(CrashGuard.deviceInfo(this@SettingsActivity))
             val last = CrashGuard.recentSummary(this@SettingsActivity)
             if (last.isNotEmpty()) append("\n最近一次异常：").append(last)
@@ -165,14 +169,16 @@ class SettingsActivity : Activity() {
                     stability
             )
             .setPositiveButton("知道了", null)
-        if (lv > 0 || CrashGuard.manual(this) >= 0) {
+        if (lv > 0 || CrashGuard.manual(this) >= 0 || conservative) {
             dlg.setNeutralButton("恢复标准模式") { _, _ ->
-                CrashGuard.reset(this)
+                if (lv > 0) CrashGuard.reset(this)
+                // 保守档是设备画像判出来的，reset() 清不掉；显式锁到标准模式
+                CrashGuard.setManual(this, 0)
                 toast("已恢复，重启小黑TV后生效")
                 refreshRows()
             }
         }
-        dlg.show()
+        runCatching { dlg.show() }
     }
 
     private fun refreshRows() {
@@ -182,7 +188,9 @@ class SettingsActivity : Activity() {
         a.notifyDataSetChanged()
     }
 
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    private fun toast(msg: String) = runCatching {
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
 
     private class SettingsAdapter(var rows: List<Row>) :
         RecyclerView.Adapter<SettingsAdapter.VH>() {
