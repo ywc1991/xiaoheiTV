@@ -18,6 +18,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import com.xiaohei.tv.CrashGuard
 import com.xiaohei.tv.data.SourceStore
 import com.xiaohei.tv.player.AdFilterDataSourceFactory
 import com.xiaohei.tv.player.AdRules
@@ -54,6 +55,25 @@ class BenchReceiver : BroadcastReceiver() {
                 val n = AdRules.update(text)
                 SourceStore(ctx).adRules = text
                 Log.i(TAG, "adFilter 规则已下发 $n 条 | ${AdRules.snapshot()}")
+                return
+            }
+            // 别人家的电视闪退时，只要能 adb 连一下就能把完整堆栈导出来精确定位
+            "crash" -> {
+                Log.i(TAG, "stability level=${CrashGuard.level(ctx)} slots=${CrashGuard.slotCount(ctx)} " +
+                    "crashInWindow=${CrashGuard.crashCount(ctx)} ${CrashGuard.deviceInfo(ctx)}")
+                Log.i(TAG, "crash dump >>>\n${CrashGuard.dump(ctx)}")
+                return
+            }
+            "crashreset" -> {
+                CrashGuard.reset(ctx)
+                Log.i(TAG, "stability 已恢复正常模式 slots=${CrashGuard.slotCount(ctx)}（重启 App 生效）")
+                return
+            }
+            // 在对方设备上主动降级验证：level=0 标准 / 1 单预播槽 / 2 无预播
+            "safe" -> {
+                val lv = intent.getStringExtra("level")?.toIntOrNull() ?: 1
+                CrashGuard.setManual(ctx, lv.coerceIn(0, 2))
+                Log.i(TAG, "stability 手动设为 level=$lv（重启 App 生效）")
                 return
             }
         }

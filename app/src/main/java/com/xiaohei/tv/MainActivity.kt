@@ -20,6 +20,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -194,8 +195,18 @@ class MainActivity : Activity() {
     /** 启动后 1 秒内忽略按键，防止系统残留事件误触 */
     private fun justLaunched(): Boolean = SystemClock.uptimeMillis() - startTime < 1000
 
+    /** Activity 是否还活着：所有延迟任务执行前都查它，避免销毁后访问 View / 已释放的播放器 */
+    private var destroyed = false
+
+    /** 是否处于可交互前台：退到后台绝不启预播，也不让残留回调再把流拉起来 */
+    private var resumed = true
+
+    /** 极快连按时把「需要冷启动」的请求合并成最后一次，见 [playDirect] */
+    private var pendingDirect: Runnable? = null
+    private var lastDirectAt = 0L
+
     private val handler = Handler(Looper.getMainLooper())
-    private val hideInfo = Runnable { infoBar.visibility = View.GONE }
+    private val hideInfo = Runnable { if (!destroyed) infoBar.visibility = View.GONE }
     private val longPressRunnable = Runnable {
         longPressFired = true
         val ch = focusedChannel()
@@ -206,6 +217,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashGuard.notePhase("onCreate")
         relaxTls()
         setContentView(R.layout.activity_main)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -254,9 +266,11 @@ class MainActivity : Activity() {
             playerView.player = it
             attach(it)
         }
-        // 两个预播槽：静音、不接画面。常驻着比每次临时创建更省事，
-        // 空闲时不加载任何东西，几乎不占资源。
-        repeat(2) { i ->
+        // 预播槽数量由设备能力与历史崩溃决定：正常电视仍是 2 个（切台秒切不变），
+        // 低内存或反复崩溃过的盒子自动降到 1 个甚至 0 个，避免解码器实例打满而闪退。
+        val slots = CrashGuard.slotCount(this)
+        Log.i("XiaoHeiTV", "stability level=${CrashGuard.level(this)} slots=$slots ${CrashGuard.deviceInfo(this)}")
+        repeat(slots) { i ->
             val p = newPlayer().also {
                 it.volume = 0f
                 setAudioEnabled(it, false)
@@ -338,8 +352,10 @@ class MainActivity : Activity() {
 
     private fun focusGroupAt(index: Int) {
         groupList.scrollToPosition(index)
-        groupList.postDelayed({
-            groupList.findViewHolderForAdapterPosition(index)?.itemView?.requestFocus()
+        // 统一挂在主线程 Handler 上：onDestroy 的 removeCallbacksAndMessages 才能一并撤掉，
+        // 否则 Activity 销毁后 View 自己的延时任务还会回来找已经无效的 ViewHolder。
+        handler.postDelayed({
+            if (!destroyed) groupList.findViewHolderForAdapterPosition(index)?.itemView?.requestFocus()
         }, 30)
     }
 
@@ -356,6 +372,7 @@ class MainActivity : Activity() {
             }
         }
         val task = Runnable {
+            if (destroyed) return@Runnable
             val vh = channelList.findViewHolderForAdapterPosition(index)
             val target = vh?.itemView ?: channelList.getChildAt(0)
             target?.requestFocus()
@@ -427,6 +444,7 @@ class MainActivity : Activity() {
     }
 
     private fun warmUpFocusedChannel() {
+        if (destroyed || !resumed) return
         val ch = groups.getOrNull(groupIndex)?.channels?.getOrNull(focusedChannelPosition()) ?: return
         if (ch.name == currentChannel?.name) return
         // 已经有槽在缓冲它了（可能是方向预测提前备的），别把现成数据丢掉
@@ -476,9 +494,9 @@ class MainActivity : Activity() {
         // 只有进全屏才需要顶部 OSD；回到列表时面板自己带信息，OSD 会压在面板上
         if (fullscreen) showInfo()
         if (fullscreen) {
-            Toast.makeText(this, "全屏播放：↑↓ 切台，← → 或返回打开频道列表", Toast.LENGTH_SHORT).show()
+            safeToast("全屏播放：↑↓ 切台，← → 或返回打开频道列表")
         } else {
-            Toast.makeText(this, "已显示频道列表", Toast.LENGTH_SHORT).show()
+            safeToast("已显示频道列表")
         }
     }
 
@@ -518,6 +536,7 @@ class MainActivity : Activity() {
                 emptyList()
             }
             runOnUiThread {
+                if (destroyed || isFinishing) return@runOnUiThread
                 Log.i("XiaoHeiTV", "channelsLoaded +${SystemClock.uptimeMillis() - t0}ms ${loaded.size} 频道")
                 loadingBar.visibility = View.GONE
                 allChannels = loaded
@@ -541,14 +560,21 @@ class MainActivity : Activity() {
                 focusGroupAt(groupIndex)
                 loadEpg()
                 if (target.name == last) {
-                    Toast.makeText(this, "继续播放：${target.name}", Toast.LENGTH_SHORT).show()
+                    safeToast("继续播放：${target.name}")
                 }
             }
         }.start()
     }
 
     private fun newPlayer(): ExoPlayer =
-        ExoPlayer.Builder(this)
+        ExoPlayer.Builder(
+            this,
+            // 老盒子 / 厂商定制固件上主解码器经常初始化失败，允许回退到备用解码器，
+            // 不至于让一次切台直接把 App 带崩。码流没变，画质不受影响。
+            DefaultRenderersFactory(this)
+                .setEnableDecoderFallback(true)
+                .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+        )
             // 关键：不接管音频焦点。否则预播播放器一开始缓冲就会把焦点抢走，
             // 正在看的那个台会「莫名其妙静音」——这正是双播放器最容易踩的坑。
             // 声音由我们自己用音量控制：预播的恒为 0，在播的恒为 1。
@@ -602,6 +628,7 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------------- 在播的播放器
 
     private fun onActiveError(error: PlaybackException) {
+        if (destroyed) return
         val ch = currentChannel ?: return
         // 切台等待时主播放器里装的还是旧台，它的报错不该算到新台头上，
         // 否则会误换线路、把正在缓冲的新台重来一遍。
@@ -620,6 +647,13 @@ class MainActivity : Activity() {
         if (autoTries < ch.urls.size - 1) {
             autoTries++
             if (lineOrder.isEmpty()) buildLineOrder(ch)
+            // 自定义源可能给出空线路表，取模 0 会直接抛 ArithmeticException
+            if (lineOrder.isEmpty()) {
+                errorHint.visibility = View.VISIBLE
+                errorHint.text = "该频道没有可用线路：${ch.name}"
+                cancelPrebuffer()
+                return
+            }
             orderPos = (orderPos + 1) % lineOrder.size
             urlIndex = lineOrder[orderPos]
             playCurrentUrl()
@@ -632,6 +666,7 @@ class MainActivity : Activity() {
     }
 
     private fun onActiveState(playbackState: Int) {
+        if (destroyed) return
         if (playbackState == Player.STATE_READY || playbackState == Player.STATE_BUFFERING) {
             errorHint.visibility = View.GONE
         }
@@ -670,8 +705,8 @@ class MainActivity : Activity() {
         if (failed != null && slot.tries < 2 && failed.urls.size > 1) {
             val order = lineOrderFor(failed)
             val cur = order.indexOfFirst { failed.urls[it] == slot.url }
-            val nextIdx = order.getOrElse(((cur + 1).coerceAtLeast(0)) % order.size) { 0 }
-            val nextUrl = failed.urls.getOrNull(nextIdx)
+            val nextIdx = if (order.isEmpty()) -1 else ((cur + 1).coerceAtLeast(0)) % order.size
+            val nextUrl = if (nextIdx >= 0) failed.urls.getOrNull(nextIdx) else null
             if (nextUrl != null && nextUrl != slot.url) {
                 slot.tries++
                 Log.i("XiaoHeiTV", "preRetry[${slot.index}] ${failed.name} -> line[${nextIdx + 1}/${failed.urls.size}]")
@@ -724,6 +759,8 @@ class MainActivity : Activity() {
      * 也不要把已经下了两三秒的数据丢掉、再从头冷启动一次。
      */
     private fun swapToPre(slot: PreSlot, allowBuffering: Boolean = false) {
+        if (destroyed) return
+        CrashGuard.notePhase("swap")
         val np = slot.player
         val old = player ?: return
         if (!allowBuffering && np.playbackState != Player.STATE_READY) return
@@ -754,8 +791,10 @@ class MainActivity : Activity() {
             np.volume = 1f
             playerView.player = np
             np.playWhenReady = true
-            // 老播放器立刻停掉：既省带宽，也给新画面让出解码器
+            // 老播放器立刻停掉并清掉媒体项：既省带宽，也把解码器实例还回去。
+            // 低配盒子上第三个解码器申请失败是换台闪退最常见的原因。
             old.stop()
+            runCatching { old.clearMediaItems() }
             slot.channel = null
             slot.url = null
             slot.failed = false
@@ -791,6 +830,7 @@ class MainActivity : Activity() {
 
     /** 在某个预播槽上把某条线路拉起来（静音、无画面，不会打扰正在看的节目） */
     private fun startPrebuffer(slot: PreSlot, ch: Channel, url: String, resetTries: Boolean = true) {
+        if (destroyed || !resumed) return
         val p = slot.player
         if (slot.channel?.name == ch.name && slot.url == url && p.playbackState != Player.STATE_IDLE) return
         // 预播是「加分项」，任何异常都不该把正在看的节目带下水
@@ -819,7 +859,8 @@ class MainActivity : Activity() {
         slot.url = null
         slot.failed = false
         slot.tries = 0
-        slot.player.stop()
+        // 停一个已经 release 的播放器会抛 IllegalStateException，不能让它冒到切台主线程
+        runCatching { slot.player.stop() }
     }
 
     private fun cancelPrebuffer() {
@@ -830,6 +871,7 @@ class MainActivity : Activity() {
     }
 
     private val prebufferTimeout = Runnable {
+        if (destroyed || !resumed) return@Runnable
         // 预播迟迟不就绪（多半是死线路），别让用户一直盯着静帧。
         // 判断依据必须是「主播放器里装的还是不是这个台」：等待预播时主播放器可是
         // STATE_READY 的（它还在放旧台），拿它做条件会让这个兜底永远不触发。
@@ -856,6 +898,7 @@ class MainActivity : Activity() {
     private val pendingPrebufferStarts = HashMap<Int, Runnable>()
 
     private fun schedulePrebufferNext() {
+        if (destroyed || !resumed) return
         handler.removeCallbacks(prebufferNextTask)
         // 不在这里清错峰任务：swap 与 STATE_READY 会连着调度两次，
         // 清掉会让第二次把第二槽当成「第一个要启动的」而立刻冷启动两路流。
@@ -864,6 +907,7 @@ class MainActivity : Activity() {
     }
 
     private fun prebufferNext() {
+        if (destroyed || !resumed) return
         val cur = currentChannel ?: return
         if (preSlots.isEmpty()) return
         runCatching {
@@ -929,6 +973,14 @@ class MainActivity : Activity() {
 
 
     private fun playChannel(channel: Channel) {
+        if (destroyed) return
+        if (channel.urls.isEmpty()) {
+            errorHint.visibility = View.VISIBLE
+            errorHint.text = "该频道没有可用线路：${channel.name}"
+            return
+        }
+        CrashGuard.noteChannel(channel.name)
+        CrashGuard.notePhase("zap")
         // 同一个台再点一次（比如手滑连按 OK）不该重新连一遍流：
         // 网络重连动辄两三秒，画面还会黑一下，纯粹是负优化。
         // 注意这里看的是「主播放器里真正装着谁」，不是「用户想看谁」——
@@ -960,9 +1012,9 @@ class MainActivity : Activity() {
         // 全屏时列表是 GONE，别再去抢焦点，否则会打断正在进行的切台。
         if (!fullscreen) {
             if (focusInGroups) {
-                groupList.postDelayed({ focusGroupAt(groupIndex) }, 60)
+                handler.postDelayed({ if (!destroyed) focusGroupAt(groupIndex) }, 60)
             } else {
-                if (pos >= 0) channelList.postDelayed({ focusChannelAt(pos) }, 60)
+                if (pos >= 0) handler.postDelayed({ if (!destroyed) focusChannelAt(pos) }, 60)
             }
         }
     }
@@ -980,6 +1032,12 @@ class MainActivity : Activity() {
      * 两条路必须用同一套规则，否则会出现「播放器能连、预热连不上」。
      */
     private fun relaxTls() = TlsRelax.apply()
+
+    /** 部分厂商 TV 的 Toast 在 Activity 收尾时会抛 BadTokenException，提示类操作不值得让它崩 */
+    private fun safeToast(msg: String) {
+        if (destroyed || isFinishing) return
+        runCatching { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() }
+    }
 
     // ---------------------------------------------------------------- 线路顺序
     // 不再记录「哪条线路广告多 / 老失败」——那是上一版的换源避坑逻辑，已按需求移除。
@@ -1025,7 +1083,7 @@ class MainActivity : Activity() {
 
     private fun playCurrentUrl() {
         val ch = currentChannel ?: return
-        if (urlIndex >= ch.urls.size) return
+        if (urlIndex < 0 || urlIndex >= ch.urls.size) return
         val url = ch.urls[urlIndex]
         if (player == null) return
         Log.i("XiaoHeiTV", "play ${ch.name} line[${urlIndex + 1}/${ch.urls.size}] = $url")
@@ -1052,7 +1110,7 @@ class MainActivity : Activity() {
                 val slot = preSlots.firstOrNull { it.channel == null || it.failed } ?: preSlots.last()
                 startPrebuffer(slot, ch, url)
             }
-            player?.playWhenReady = false
+            runCatching { player?.playWhenReady = false }
             // 新台还在缓冲时画面是静帧，不给提示用户会以为按键没生效、又按一次
             showZapPending(ch)
             handler.removeCallbacks(prebufferTimeout)
@@ -1066,16 +1124,49 @@ class MainActivity : Activity() {
 
     /** 直接在主播放器上起播：没有可保留的旧画面时的兜底路径 */
     private fun playDirect(ch: Channel, url: String) {
+        if (destroyed) return
+        // 极快连按（间隔 <120ms）时把「需要冷启动」的请求合并成最后一次：
+        // 实测 1 秒内连按 40 次会建 40 条流，老盒子的解码器实例和内存直接被打满。
+        // 预播命中的热切换不经过这里；正常速度的切台（间隔 >120ms）也完全不受影响。
+        val now = SystemClock.uptimeMillis()
+        val wait = DIRECT_COALESCE_MS - (now - lastDirectAt)
+        if (lastDirectAt > 0L && wait > 0L) {
+            pendingDirect?.let { handler.removeCallbacks(it) }
+            val task = Runnable { playDirectNow(ch, url) }
+            pendingDirect = task
+            handler.postDelayed(task, wait)
+            if (zapStartedAt > 0L) showZapPending(ch)
+            return
+        }
+        playDirectNow(ch, url)
+    }
+
+    private fun playDirectNow(ch: Channel, url: String) {
+        // 合并任务可能在 onPause 之后才到期；后台绝不重新起流
+        if (destroyed || !resumed) return
         val p = player ?: return
+        lastDirectAt = SystemClock.uptimeMillis()
+        pendingDirect = null
+        Log.i("XiaoHeiTV", "directStart ${ch.name}（冷启动一次）")
         cancelPrebuffer()
         if (zapStartedAt > 0L) showZapPending(ch)
-        activeChannel = ch
-        p.volume = 1f
-        setAudioEnabled(p, true)
-        // playWhenReady 先置位，prepare 一完成立刻出画面，不用再等一次 play() 的回调
-        p.playWhenReady = true
-        p.setMediaItem(mediaItemOf(url), true)
-        p.prepare()
+        // 这是所有切台路径的最后一道兜底：解码器或播放器状态异常时只记日志、不让它冒到主线程
+        runCatching {
+            activeChannel = ch
+            p.volume = 1f
+            setAudioEnabled(p, true)
+            // playWhenReady 先置位，prepare 一完成立刻出画面，不用再等一次 play() 的回调
+            p.playWhenReady = true
+            p.setMediaItem(mediaItemOf(url), true)
+            p.prepare()
+        }.onFailure {
+            Log.w("XiaoHeiTV", "direct 起播失败 ${it.javaClass.simpleName}:${it.message}")
+            CrashGuard.notePhase("directError")
+            if (!destroyed) {
+                errorHint.visibility = View.VISIBLE
+                errorHint.text = "播放出错，请再按一次切台"
+            }
+        }
     }
 
     /** 地址里带 m3u8 就按 HLS 处理；没有后缀的（罕见）留给播放器自己判断 */
@@ -1130,7 +1221,7 @@ class MainActivity : Activity() {
             }
             runOnUiThread {
                 epgLoading = false
-                if (map.isEmpty()) return@runOnUiThread
+                if (destroyed || isFinishing || map.isEmpty()) return@runOnUiThread
                 epgMap = map
                 channelAdapter.setEpg(map)
                 updateInfoProgram()
@@ -1172,12 +1263,9 @@ class MainActivity : Activity() {
         val idx = groups.indexOfFirst { it.name == keepGroup }
         selectGroup(if (idx >= 0) idx else 0)
         channelAdapter.updateFavorites(store.favorites)
-        Toast.makeText(
-            this,
-            if (added) "已收藏：${ch.name}" else "已取消收藏：${ch.name}",
-            Toast.LENGTH_SHORT
-        ).show()
-        channelList.postDelayed({
+        safeToast(if (added) "已收藏：${ch.name}" else "已取消收藏：${ch.name}")
+        handler.postDelayed({
+            if (destroyed) return@postDelayed
             val pos = channelAdapter.positionOf(ch.name)
             if (pos >= 0) focusChannelAt(pos)
         }, 60)
@@ -1324,29 +1412,47 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- 生命周期
 
+    override fun onStart() {
+        super.onStart()
+        resumed = true
+        CrashGuard.notePhase("onStart")
+    }
+
     override fun onPause() {
         super.onPause()
+        resumed = false
         // 不做后台播放：一旦不可交互就暂停，回到前台再继续。
         // 预播播放器 playWhenReady 恒为 true 且不接画面，只停主播放器是没用的：
         // 实测退到别的 App 之后它还会一路刷新直播清单，十几分钟不停，白吃带宽。
-        player?.pause()
-        cancelPrebuffer()
         handler.removeCallbacks(prebufferNextTask)
+        handler.removeCallbacks(prebufferTimeout)
         handler.removeCallbacks(warmTask)
-        loadingBar.visibility = View.GONE
+        pendingPrebufferStarts.values.forEach { handler.removeCallbacks(it) }
+        pendingPrebufferStarts.clear()
+        pendingDirect?.let { handler.removeCallbacks(it) }
+        pendingDirect = null
+        runCatching { player?.pause() }
+        cancelPrebuffer()
+        runCatching { loadingBar.visibility = View.GONE }
     }
 
     override fun onStop() {
         super.onStop()
-        // 双保险：彻底不可见时停播并释放解码器，退出后不占用后台资源
-        player?.stop()
-        player?.clearMediaItems()
-        preSlots.forEach { it.player.stop(); it.player.clearMediaItems() }
+        resumed = false
+        // 双保险：彻底不可见时停播并释放解码器，退出后不占用后台资源。
+        // 每个播放器单独兜住异常：其中一个已被释放不能拖垮其余的清理。
+        runCatching {
+            player?.stop()
+            player?.clearMediaItems()
+        }
+        preSlots.forEach { s -> runCatching { s.player.stop(); s.player.clearMediaItems() } }
         cancelPrebuffer()
     }
 
     override fun onResume() {
         super.onResume()
+        resumed = true
+        CrashGuard.notePhase("onResume")
         if (loadedKey != store.sourceKey) {
             loadChannels()
             return
@@ -1354,24 +1460,29 @@ class MainActivity : Activity() {
         // onStop 里 stop()+clearMediaItems() 会把播放器打回 IDLE，
         // 回来时只置 playWhenReady 会黑屏，必须重新起播（有线路直通表，很快）。
         val ch = currentChannel
-        if (ch != null && player?.playbackState == Player.STATE_IDLE) {
+        if (ch != null && ch.urls.isNotEmpty() && player?.playbackState == Player.STATE_IDLE) {
             buildLineOrder(ch)
             val url = ch.urls.getOrElse(urlIndex) { "" }
             if (url.isNotEmpty()) playDirect(ch, url)
         } else {
-            player?.playWhenReady = true
+            runCatching { player?.playWhenReady = true }
         }
         schedulePrebufferNext()
     }
 
     override fun onDestroy() {
-        super.onDestroy()
+        // 先立标志再动手：释放播放器会同步回调监听，此时绝不能再碰 View
+        destroyed = true
+        resumed = false
         handler.removeCallbacksAndMessages(null)
-        playerView.player = null
-        player?.release()
+        pendingDirect = null
+        pendingPrebufferStarts.clear()
+        runCatching { playerView.player = null }
+        runCatching { player?.release() }
         player = null
-        preSlots.forEach { it.player.release() }
+        preSlots.forEach { s -> runCatching { s.player.release() } }
         preSlots.clear()
+        super.onDestroy()
     }
 
     private companion object {
@@ -1392,6 +1503,9 @@ class MainActivity : Activity() {
 
         /** 第二槽错峰启动，避免两路流同时冷启动互相抢带宽 */
         const val SLOT_STAGGER_MS = 700L
+
+        /** 极快连按时冷启动合并窗口：只影响 <120ms 的连按，预播命中不经过这里 */
+        const val DIRECT_COALESCE_MS = 120L
     }
 }
 

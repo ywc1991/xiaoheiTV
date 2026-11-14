@@ -55,16 +55,32 @@ private class AdFilterDataSource(
             return length
         }
 
-        val raw = readAll()
-        val text = String(raw, Charsets.UTF_8)
-        // 诊断：清单过滤耗时是切台链路的一部分，只在真的剔掉广告时打，便于后台核对没有拖慢播放
-        val t0 = System.nanoTime()
-        val bytes = AdFilter.filter(text, dataSpec.uri.toString()).toByteArray(Charsets.UTF_8)
-        val costUs = (System.nanoTime() - t0) / 1000L
-        // 直播清单每 10 秒刷新一次，两个播放器同时跑会把日志刷满、把真正的切台记录冲掉。
-        // 只有确实剔掉了广告分片才打日志，其余静默。
-        if (raw.size != bytes.size) {
-            Log.d(TAG, "已过滤播放列表 ${dataSpec.uri} ${raw.size}B -> ${bytes.size}B 耗时 ${costUs}us")
+        // 清单读取/过滤跑在播放器的加载线程上：异常必须变成可恢复的 IOException（换线路），
+        // 绝不能让 RuntimeException 冒出去把整个 App 崩掉。
+        val raw: ByteArray = try {
+            readAll()
+        } catch (t: Throwable) {
+            Log.w(TAG, "清单读取失败，交给播放器换线 ${t.javaClass.simpleName}")
+            started = false
+            runCatching { transferEnded() }
+            throw java.io.IOException("playlist read failed", t)
+        }
+        val bytes = try {
+            val text = String(raw, Charsets.UTF_8)
+            // 诊断：清单过滤耗时是切台链路的一部分，只在真的剔掉广告时打，便于后台核对没有拖慢播放
+            val t0 = System.nanoTime()
+            val out = AdFilter.filter(text, dataSpec.uri.toString()).toByteArray(Charsets.UTF_8)
+            val costUs = (System.nanoTime() - t0) / 1000L
+            // 直播清单每 10 秒刷新一次，两个播放器同时跑会把日志刷满、把真正的切台记录冲掉。
+            // 只有确实剔掉了广告分片才打日志，其余静默。
+            if (raw.size != out.size) {
+                Log.d(TAG, "已过滤播放列表 ${dataSpec.uri} ${raw.size}B -> ${out.size}B 耗时 ${costUs}us")
+            }
+            out
+        } catch (t: Throwable) {
+            // 数据已经读完，没法回退到直通上游；把原文原样交出去最安全
+            Log.w(TAG, "清单过滤异常，原样放行 ${t.javaClass.simpleName}")
+            raw
         }
         filtered = bytes
         offset = 0

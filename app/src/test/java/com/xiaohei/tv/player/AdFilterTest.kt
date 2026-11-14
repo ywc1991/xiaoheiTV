@@ -244,4 +244,24 @@ class AdFilterTest {
         // JVM 上有 GC / JIT 抖动，1ms 的门槛仍比一帧 16ms 小一个数量级
         assertTrue("平均 ${avg}us，应远小于一帧 16ms", avg < 1_000L)
     }
+
+    @Test
+    fun `畸形清单不抛异常_原样放行`() {
+        // 免费源的清单什么格式都有：非法时长、坏掉的 URI、异常 base、超长文本。
+        // 这些跑在播放器加载线程，抛出去就是整机闪退，必须一律原样放行。
+        val weird = listOf(
+            "#EXTM3U\n#EXTINF:not-a-number,\nhttp://[bad/a.ts\nhttp://[bad/b.ts\nhttp://[bad/c.ts\n",
+            "#EXTM3U\n#EXTINF:1e309,\nhttp://a.example/b.ts\n#EXTINF:-5,\n" +
+                "http://a.example/c.ts\n#EXTINF:5,\nhttp://a.example/d.ts\n",
+            "#EXTM3U\n" + "#EXT-X-CUE-OUT:30\n".repeat(200),
+            "#EXTM3U\n#EXTINF:5,\n\u0000\u0000\u0000\n#EXTINF:5,\nb.ts\n#EXTINF:5,\nc.ts\n"
+        )
+        for (text in weird) {
+            val out = AdFilter.filter(text, "http://[invalid-base")
+            assertTrue("异常输入不该被吞成空内容", out.isNotEmpty())
+        }
+        // 超过 256KB 的异常清单直接放行，不解析、不占内存
+        val huge = "#EXTM3U\n" + "X".repeat(300_000)
+        assertEquals(huge, AdFilter.filter(huge, base))
+    }
 }

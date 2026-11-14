@@ -12,6 +12,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.xiaohei.tv.CrashGuard
 import com.xiaohei.tv.R
 import com.xiaohei.tv.update.UpdateChecker
 
@@ -143,7 +144,16 @@ class SettingsActivity : Activity() {
 
     private fun showAbout() {
         val v = UpdateChecker.currentVersion(this)
-        AlertDialog.Builder(this)
+        val lv = CrashGuard.level(this)
+        val slots = CrashGuard.slotCount(this)
+        val stability = buildString {
+            append("\n\n运行状态：")
+            append(if (lv == 0) "标准（预播 $slots 路）" else "兼容模式 L$lv（预播 $slots 路，减少解码器占用）")
+            append("\n设备：").append(CrashGuard.deviceInfo(this@SettingsActivity))
+            val last = CrashGuard.recentSummary(this@SettingsActivity)
+            if (last.isNotEmpty()) append("\n最近一次异常：").append(last)
+        }
+        val dlg = AlertDialog.Builder(this)
             .setTitle("关于小黑TV")
             .setMessage(
                 "版本 v$v\n\n" +
@@ -151,10 +161,18 @@ class SettingsActivity : Activity() {
                     "全屏上下键直接切台，返回键只做界面回退、不会退出。\n\n" +
                     "内置央视 / 卫视 / 港澳台频道，同一频道带多条备用线路；" +
                     "播放清单里插播的广告分片会被自动剔除。\n\n" +
-                    "所有频道均为公开免费直播源，内容版权归各电视台所有，本应用不存储、不分发任何视频内容。"
+                    "所有频道均为公开免费直播源，内容版权归各电视台所有，本应用不存储、不分发任何视频内容。" +
+                    stability
             )
             .setPositiveButton("知道了", null)
-            .show()
+        if (lv > 0 || CrashGuard.manual(this) >= 0) {
+            dlg.setNeutralButton("恢复标准模式") { _, _ ->
+                CrashGuard.reset(this)
+                toast("已恢复，重启小黑TV后生效")
+                refreshRows()
+            }
+        }
+        dlg.show()
     }
 
     private fun refreshRows() {

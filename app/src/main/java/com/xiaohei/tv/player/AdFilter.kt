@@ -87,12 +87,23 @@ object AdFilter {
     fun filter(playlist: String, baseUrl: String?): String {
         val t0 = System.nanoTime()
         try {
-            return filterInner(playlist, baseUrl)
+            return try {
+                filterInner(playlist, baseUrl)
+            } catch (t: Throwable) {
+                // 这段跑在 ExoPlayer 的加载线程上，抛出去会直接掀掉整个进程。
+                // 畸形清单、厂商 ROM 的 URI 实现差异、异常大文本都可能触发；
+                // 宁可原样放行（顶多看到广告），也不能让切台变成闪退。
+                Log.w(TAG, "adFilter 异常放行 ${t.javaClass.simpleName}:${t.message}")
+                playlist
+            }
         } finally {
-            val costUs = (System.nanoTime() - t0) / 1000L
-            // 30 秒一条，双槽预播同时刷清单也不会把 logcat 冲掉
-            if (AdRules.noteCost(costUs)) {
-                Log.d(TAG, "adFilter diag ${AdRules.snapshot()}")
+            // 统计本身也不能把原始异常覆盖掉
+            runCatching {
+                val costUs = (System.nanoTime() - t0) / 1000L
+                // 30 秒一条，双槽预播同时刷清单也不会把 logcat 冲掉
+                if (AdRules.noteCost(costUs)) {
+                    Log.d(TAG, "adFilter diag ${AdRules.snapshot()}")
+                }
             }
         }
     }
