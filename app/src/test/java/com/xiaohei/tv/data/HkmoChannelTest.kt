@@ -50,6 +50,19 @@ class HkmoChannelTest {
         assertTrue("这些台仍然只依赖已失效的中间服务器：$naked", naked.isEmpty())
     }
 
+    /**
+     * 死线不能留：它排在某台的第二个，就只在首选线路出问题时才被用到——
+     * 那时用户已经在等，再撞一次 502 / 404 等于多等一轮超时。
+     * 2026-11-15 实测：103.172.187.30:12000 整站 502，
+     * r.jdshipin.com 的短链（62WM7）4 小时内从 302 变 404。
+     */
+    @Test
+    fun `已确认失效的服务器不得出现在任何一条线路上`() {
+        val stale = listOf("103.172.187.30:12000", "r.jdshipin.com", "aktv.top", "epg.pw")
+        val bad = hkmo().flatMap { c -> c.urls.filter { u -> stale.any { u.contains(it) } }.map { "${c.name} → $it" } }
+        assertTrue("这些线路所在服务器已确认失效，应删除：$bad", bad.isEmpty())
+    }
+
     @Test
     fun `含卫视字样的港澳台频道不会被分到卫视组`() {
         val all = M3uParser.parse(asset().readText())
