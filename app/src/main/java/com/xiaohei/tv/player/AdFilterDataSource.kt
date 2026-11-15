@@ -15,21 +15,27 @@ import androidx.media3.datasource.DefaultHttpDataSource
  */
 class AdFilterDataSourceFactory(
     context: Context,
-    private val enabled: () -> Boolean
+    private val enabled: () -> Boolean,
+    /** 电台态为 true：只有这时才向服务器索取 ICY 曲目元数据 */
+    private val icyMeta: () -> Boolean = { false }
 ) : DataSource.Factory {
 
     // 与 media3 默认行为一致的 UA，避免个别源对 UA 敏感
     private val userAgent: String = Util.getUserAgent(context, "XiaoHeiTV")
 
     override fun createDataSource(): DataSource {
-        val http = DefaultHttpDataSource.Factory()
+        val factory = DefaultHttpDataSource.Factory()
             .setUserAgent(userAgent)
             // 库默认连接超时 8 秒，对直播源来说太客气了：死线路要卡满 8 秒才报错。
             // 压到 3 秒，配合「不重试」和线路直通表，死链让位更快。
             .setConnectTimeoutMs(3_000)
             .setReadTimeoutMs(15_000)
-            .createDataSource()
-        return AdFilterDataSource(http, enabled)
+        // 老式电台流只有客户端主动说要，服务器才会在音频里插曲目信息。
+        // 视频请求不会走到这里（谓词为 false），请求头和以前完全一样。
+        if (icyMeta()) {
+            factory.setDefaultRequestProperties(mapOf("Icy-MetaData" to "1"))
+        }
+        return AdFilterDataSource(factory.createDataSource(), enabled)
     }
 }
 
