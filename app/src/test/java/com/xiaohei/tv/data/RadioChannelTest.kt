@@ -100,10 +100,23 @@ class RadioChannelTest {
     }
 
     @Test
-    fun `广播排在固定分组顺序的最后且不再有其他分组`() {
-        assertEquals(ChannelGroups.RADIO, ChannelGroups.ORDER.last())
-        assertEquals(5, ChannelGroups.ORDER.size)
+    fun `播客排在固定分组顺序的最后且不再有其他分组`() {
+        assertEquals(ChannelGroups.PODCAST, ChannelGroups.ORDER.last())
+        assertEquals(6, ChannelGroups.ORDER.size)
+        assertTrue(ChannelGroups.ORDER.contains(ChannelGroups.RADIO))
         assertFalse("固定顺序里不应再有「其他」", ChannelGroups.ORDER.contains("其他"))
+    }
+
+    @Test
+    fun `切台序列里永远不会出现播客节目行`() {
+        val all = listOf(
+            ch("CCTV-1", false),
+            ch("中国之声", true),
+            ch("故事FM", true).copy(isPodcast = true, urls = emptyList()),
+            ch("湖南卫视", false)
+        )
+        assertTrue(ChannelGroups.zapList(all, inRadio = false).none { it.isPodcast })
+        assertTrue(ChannelGroups.zapList(all, inRadio = true).none { it.isPodcast })
     }
 
     @Test
@@ -160,6 +173,31 @@ class RadioChannelTest {
         // 电台名不能和视频台撞名，否则切台序列去重会漏台
         val clash = radio.map { it.name }.intersect(video.map { it.name }.toSet())
         assertTrue("电台与视频台重名：$clash", clash.isEmpty())
+    }
+
+    @Test
+    fun `内置源里的音乐类电台齐全且线路可用`() {
+        val f = listOf(
+            File("src/main/assets/channels_main.m3u"),
+            File("app/src/main/assets/channels_main.m3u")
+        ).firstOrNull { it.exists() }
+        assertTrue("找不到内置频道清单", f != null)
+        val radio = M3uParser.parse(f!!.readText()).filter { it.isAudio }
+        val music = listOf(
+            "音乐之声", "上海动感101", "上海经典音乐广播", "广东音乐之声", "江苏经典流行音乐广播",
+            "AsiaFM亚洲音乐台", "北京音乐广播", "浙江音乐调频", "河南音乐广播", "上海经典金曲",
+            "四川音乐广播", "湖南音乐之声", "重庆音乐广播", "陕西音乐广播", "891音乐台"
+        )
+        val names = radio.map { it.name }.toSet()
+        val missing = music.filter { it !in names }
+        assertTrue("缺少音乐频道：$missing", missing.isEmpty())
+        music.forEach { n ->
+            val c = radio.first { it.name == n }
+            assertTrue("$n 应至少有一条线路", c.urls.isNotEmpty())
+            assertTrue("$n 的线路必须都是 http(s)", c.urls.all { it.startsWith("http") })
+        }
+        assertTrue("电台总数应不少于 23，实际 ${radio.size}", radio.size >= 23)
+        assertEquals("电台不应重名", radio.size, names.size)
     }
 
     private fun ch(name: String, audio: Boolean) =

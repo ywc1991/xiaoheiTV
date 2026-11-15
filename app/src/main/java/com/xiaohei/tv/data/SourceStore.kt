@@ -76,6 +76,18 @@ class SourceStore(context: Context) {
 
     fun clearGoodLine(name: String) = prefs.edit().remove("goodLine:$name").apply()
 
+    // ---------------------------------------------------------------- 播客续播
+    // 播客是点播内容，"上次听到 12:31" 比"重新从头听"重要得多。
+    // 键用 showId + 音频地址哈希，音频地址变了就自然当成新的一集。
+
+    fun podcastPosition(episodeId: String): Long = prefs.getLong("podPos:$episodeId", 0L)
+
+    fun setPodcastPosition(episodeId: String, positionMs: Long) =
+        prefs.edit().putLong("podPos:$episodeId", positionMs).apply()
+
+    fun clearPodcastPosition(episodeId: String) =
+        prefs.edit().remove("podPos:$episodeId").apply()
+
     fun filesDir(): File = appContext.filesDir
 
     fun customFile() = File(appContext.filesDir, "custom.m3u")

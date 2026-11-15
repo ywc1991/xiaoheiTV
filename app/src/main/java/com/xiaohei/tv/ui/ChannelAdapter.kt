@@ -96,6 +96,8 @@ class ChannelAdapter(
             // 第二行只放「有用的信息」：优先节目名，其次线路数；都没有就整行隐藏，别留空占位
             val epgTitle = epg[EpgRepository.normalize(c.name)]?.current?.title
             val metaText = when {
+                // 播客节目行：第二行放作者，比「几条线路」有用得多
+                c.isPodcast -> c.subtitle.ifEmpty { "播客" }
                 !epgTitle.isNullOrEmpty() -> epgTitle
                 c.isAudio -> "网络电台"
                 c.urls.size > 1 -> "${c.urls.size} 条线路"
@@ -105,6 +107,7 @@ class ChannelAdapter(
             meta.visibility = if (metaText.isEmpty()) View.GONE else View.VISIBLE
             // 重绘后按当前焦点状态恢复颜色（重绘不会触发 FocusChangeListener）
             meta.setTextColor(metaColor(itemView.isFocused))
+            badge.text = if (c.isPodcast) "● 播放中" else "● 直播"
             badge.visibility = if (c.name == playingName) View.VISIBLE else View.GONE
             itemView.isActivated = c.name == playingName
             // 优先使用打包的高清台标，未命中则回退 M3U 里的网络台标

@@ -30,22 +30,28 @@ import androidx.recyclerview.widget.RecyclerView
 import com.xiaohei.tv.data.ChannelGroups
 import com.xiaohei.tv.data.EpgEntry
 import com.xiaohei.tv.data.EpgRepository
+import com.xiaohei.tv.data.PodcastCatalog
+import com.xiaohei.tv.data.PodcastStore
 import com.xiaohei.tv.data.SourceStore
 import com.xiaohei.tv.model.Channel
+import com.xiaohei.tv.model.PodcastEpisode
+import com.xiaohei.tv.model.PodcastShow
 import com.xiaohei.tv.player.AdFilter
 import com.xiaohei.tv.player.AdFilterDataSourceFactory
 import com.xiaohei.tv.player.AdRules
 import com.xiaohei.tv.player.TlsRelax
 import com.xiaohei.tv.ui.ChannelAdapter
+import com.xiaohei.tv.ui.EpisodeAdapter
 import com.xiaohei.tv.ui.GroupAdapter
 import com.xiaohei.tv.ui.GroupEntry
 import com.xiaohei.tv.ui.RadioBackdropView
 import com.xiaohei.tv.ui.SettingsActivity
+import java.util.Locale
 
 /**
  * 两栏式频道浏览：
  *
- *   左栏＝分组（收藏 / 央视 / 卫视 / 港澳台 / 广播，自定义源自带分组追加在后）
+ *   左栏＝分组（收藏 / 央视 / 卫视 / 港澳台 / 广播 / 播客，自定义源自带分组追加在后）
  *   右栏＝当前选中分组下的频道
  *
  * 按键：
@@ -97,7 +103,40 @@ class MainActivity : Activity() {
 
     private lateinit var radioOverlay: View
     private lateinit var radioName: TextView
+    private lateinit var radioKicker: TextView
     private lateinit var radioBackdrop: RadioBackdropView
+
+    // ---------------------------------------------------------------- 播客
+    // 播客是点播：一档节目一行，按 OK 展开这一档的分集，选中哪集播哪集。
+    // 分集不在 APK 里，打开面板时才按 RSS 拉取（PodcastStore 会缓存 12 小时）。
+    private lateinit var podcastStore: PodcastStore
+    private lateinit var episodePanel: View
+    private lateinit var episodeList: RecyclerView
+    private lateinit var episodeAdapter: EpisodeAdapter
+    private lateinit var episodeShowName: TextView
+    private lateinit var episodeShowMeta: TextView
+    private lateinit var episodeLoading: View
+    private lateinit var episodeEmpty: TextView
+    private lateinit var podcastProgress: View
+    private lateinit var podcastBar: ProgressBar
+    private lateinit var podcastTime: TextView
+
+    /** 分集面板是否展开（展开时方向键交给分集列表，返回逐层退出） */
+    private var panelOpen = false
+    private var panelShow: PodcastShow? = null
+    private var panelEpisodes: List<PodcastEpisode> = emptyList()
+
+    /** 当前在播的那一集；为 null 说明在播视频或电台 */
+    private var currentEpisode: PodcastEpisode? = null
+
+    /** 续播待跳转的位置：等播放器 READY 之后再 seek，太早会被 prepare 覆盖 */
+    private var pendingSeekMs = 0L
+
+    /** 分集加载的序号，防止用户换档后旧结果把新列表冲掉 */
+    private var podcastLoadSeq = 0
+
+    /** 进度落盘节流：每 5 秒写一次，不每秒都写 SharedPreferences */
+    private var tickSaveCounter = 0
 
     /**
      * 当前频道的线路优先顺序（存 urls 的原始下标）。
@@ -262,6 +301,24 @@ class MainActivity : Activity() {
         // 老电视（DeviceProfile 保守档）自动降帧、少光晕；标准档用完整效果
         radioBackdrop.setConservative(conservative)
 
+        radioKicker = findViewById(R.id.radioKicker)
+        podcastProgress = findViewById(R.id.podcastProgress)
+        podcastBar = findViewById(R.id.podcastBar)
+        podcastTime = findViewById(R.id.podcastTime)
+        episodePanel = findViewById(R.id.episodePanel)
+        episodeList = findViewById(R.id.episodeList)
+        episodeShowName = findViewById(R.id.episodeShowName)
+        episodeShowMeta = findViewById(R.id.episodeShowMeta)
+        episodeLoading = findViewById(R.id.episodeLoading)
+        episodeEmpty = findViewById(R.id.episodeEmpty)
+        podcastStore = PodcastStore(this)
+        episodeAdapter = EpisodeAdapter(
+            onPlay = { ep -> panelShow?.let { playEpisode(it, ep) } },
+            positionOf = { ep -> store.podcastPosition(ep.id) }
+        )
+        episodeList.layoutManager = LinearLayoutManager(this)
+        episodeList.adapter = episodeAdapter
+
         groupAdapter = GroupAdapter { index ->
             if (justLaunched()) return@GroupAdapter
             selectGroup(index)
@@ -270,7 +327,12 @@ class MainActivity : Activity() {
         channelAdapter = ChannelAdapter(
             onClick = { channel ->
                 if (justLaunched()) return@ChannelAdapter
-                if (channel.name == currentChannel?.name) toggleFullscreen() else playChannel(channel)
+                when {
+                    // 播客节目行：点开分集，而不是起播
+                    channel.isPodcast -> openEpisodePanel(channel)
+                    channel.name == currentChannel?.name -> toggleFullscreen()
+                    else -> playChannel(channel)
+                }
             },
             onLongClick = { channel ->
                 // 触摸长按本身就是明确意图（只可能发生在频道项上），不必再判断焦点在哪一栏
@@ -462,14 +524,14 @@ class MainActivity : Activity() {
 
     private fun scheduleWarmUp() {
         handler.removeCallbacks(warmTask)
-        if (fullscreen) return
+        if (fullscreen || panelOpen) return
         // 保守档把列表悬停预热放慢一点：快速刷频道时不至于每划过一个台就重建一路解码器。
         // 只是延迟变化，预热本身仍在，点台的起播链路没动。
         handler.postDelayed(warmTask, if (conservative) 500L else 220L)
     }
 
     private fun warmUpFocusedChannel() {
-        if (destroyed || !resumed) return
+        if (destroyed || !resumed || panelOpen) return
         val ch = groups.getOrNull(groupIndex)?.channels?.getOrNull(focusedChannelPosition()) ?: return
         if (ch.name == currentChannel?.name) return
         // 电台不走预播：槽里音轨是禁用的，纯音频流永远 READY 不了
@@ -566,15 +628,26 @@ class MainActivity : Activity() {
                 if (destroyed || isFinishing) return@runOnUiThread
                 Log.i("XiaoHeiTV", "channelsLoaded +${SystemClock.uptimeMillis() - t0}ms ${loaded.size} 频道")
                 loadingBar.visibility = View.GONE
-                allChannels = loaded
+                // 播客节目单内置在 APK 里：一档节目就是列表里的一行，分集等打开面板再拉。
+                // 它排在视频源之后，且切台序列里会被排除，所以不影响原有频道顺序与切台。
+                allChannels = loaded + PodcastCatalog.shows.map { PodcastCatalog.asChannel(it) }
                 if (allChannels.isEmpty()) {
                     errorHint.visibility = View.VISIBLE
                     errorHint.text = "频道列表为空，按菜单键检查播放源"
                     return@runOnUiThread
                 }
-                errorHint.visibility = View.GONE
+                if (loaded.isEmpty()) {
+                    // 视频源挂了但播客还在：照样能进去听，只提示一句
+                    errorHint.visibility = View.VISIBLE
+                    errorHint.text = "频道列表为空，按菜单键检查播放源"
+                } else {
+                    errorHint.visibility = View.GONE
+                }
                 val last = store.lastChannelName
-                val target = allChannels.firstOrNull { it.name == last } ?: allChannels.first()
+                // 上次听的是播客也不能在冷启动时直接落进分集面板：起点仍放在视频台上
+                val target = allChannels.firstOrNull { it.name == last && !it.isPodcast }
+                    ?: allChannels.firstOrNull { !it.isPodcast }
+                    ?: allChannels.first()
 
                 buildGroups(store.favorites)
                 // 打开就停在当前频道所在分组
@@ -672,6 +745,15 @@ class MainActivity : Activity() {
             Log.i("XiaoHeiTV", "playError 忽略（旧播放器，正在切到 ${ch.name}）")
             return
         }
+        if (ch.isPodcast) {
+            // 播客没有「换线路」这一说：一集就一个音频地址，失败就是这一集的问题
+            Log.w("XiaoHeiTV", "podcastError ${currentEpisode?.title} = ${currentEpisode?.url} " +
+                "cause=${error.cause?.javaClass?.simpleName}:${error.cause?.message}")
+            errorHint.visibility = View.VISIBLE
+            errorHint.text = "这一集暂时播不了，换一集试试"
+            stopPodcastTick()
+            return
+        }
         Log.w(
             "XiaoHeiTV",
             "playError ${ch.name} line[${urlIndex + 1}/${ch.urls.size}] = " +
@@ -737,6 +819,13 @@ class MainActivity : Activity() {
             val ch = currentChannel
             if (ch == null || activeChannel?.name != ch.name) return
             autoTries = 0
+            // 播客续播：等播放器真 READY 再跳，太早 seek 会被 prepare 覆盖掉
+            if (pendingSeekMs > 0L) {
+                val target = pendingSeekMs
+                pendingSeekMs = 0L
+                runCatching { player?.seekTo(target) }
+                updatePodcastProgress()
+            }
             // 真正出过图的线路才有资格进直通表（同时写盘，重启后不用重踩慢源）
             ch.urls.getOrNull(urlIndex)?.let { rememberGoodLine(ch.name, it) }
             // 只打第一次出图的耗时，换线路重试时不重复打
@@ -1052,6 +1141,11 @@ class MainActivity : Activity() {
 
     private fun playChannel(channel: Channel) {
         if (destroyed) return
+        // 播客节目行本身没有音频地址：按 OK 是「打开这一档的分集」，不是起播
+        if (channel.isPodcast) {
+            openEpisodePanel(channel)
+            return
+        }
         if (channel.urls.isEmpty()) {
             errorHint.visibility = View.VISIBLE
             errorHint.text = "该频道没有可用线路：${channel.name}"
@@ -1074,6 +1168,9 @@ class MainActivity : Activity() {
         }
 
         currentChannel = channel
+        // 从播客切回直播：先把这一集的进度落盘，再清掉分集上下文
+        if (currentEpisode != null) savePodcastPosition()
+        currentEpisode = null
         radioMode = channel.isAudio
         autoTries = 0
         playStartedAt = SystemClock.uptimeMillis()
@@ -1286,18 +1383,47 @@ class MainActivity : Activity() {
         infoMeta.text = lineLabel(ch)
     }
 
-    private fun lineLabel(ch: Channel): String =
-        (if (ch.isAudio) "网络电台" else ch.group) +
-            " · 线路 ${orderPos + 1}/${ch.urls.size.coerceAtLeast(1)}"
+    private fun lineLabel(ch: Channel): String = when {
+        // 播客没有「线路」，只有「这一档一共多少集」
+        ch.isPodcast -> if (currentEpisode != null && panelEpisodes.isNotEmpty()) {
+            "播客 · 共 ${panelEpisodes.size} 集"
+        } else {
+            "播客 · 点播"
+        }
+        ch.isAudio -> "网络电台 · 线路 ${orderPos + 1}/${ch.urls.size.coerceAtLeast(1)}"
+        else -> "${ch.group} · 线路 ${orderPos + 1}/${ch.urls.size.coerceAtLeast(1)}"
+    }
 
     /** 电台没有画面：动态壁纸铺底 + 台名居中，避免黑屏被误认为「没播出来」 */
     private fun applyRadioUi(ch: Channel) {
         val audio = ch.isAudio
         radioOverlay.visibility = if (audio) View.VISIBLE else View.GONE
         if (audio) {
-            radioName.text = ch.name
+            val ep = currentEpisode
+            val podcast = ch.isPodcast && ep != null
+            radioKicker.text = if (podcast) "播客 · 正在播放" else "网络电台 · 正在播放"
+            if (podcast) {
+                // 分集标题普遍很长：小一号、最多两行、限宽，避免横穿整个屏幕
+                radioName.text = ep!!.title
+                radioName.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 24f)
+                radioName.maxLines = 2
+                radioName.ellipsize = android.text.TextUtils.TruncateAt.END
+                radioName.maxWidth = (resources.displayMetrics.widthPixels * 0.62f).toInt()
+                podcastProgress.visibility = View.VISIBLE
+                updatePodcastProgress()
+            } else {
+                radioName.text = ch.name
+                radioName.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 34f)
+                radioName.maxLines = 1
+                radioName.ellipsize = null
+                radioName.maxWidth = Int.MAX_VALUE
+                podcastProgress.visibility = View.GONE
+            }
             // 换台换配色，同一个台永远同一套
             radioBackdrop.setStation(ch.name)
+        } else {
+            podcastProgress.visibility = View.GONE
+            stopPodcastTick()
         }
         // 视频态一帧都不画；退后台（resumed=false）同样停表
         radioBackdrop.setAnimating(audio && resumed)
@@ -1378,10 +1504,227 @@ class MainActivity : Activity() {
         }, 60)
     }
 
+    // ---------------------------------------------------------------- 播客
+
+    /**
+     * 打开某一档的分集面板。
+     *
+     * 内存里有缓存就直接画（切换档目 0 延迟），没有就先转圈再去拉 RSS：
+     * 单档 RSS 常有几百 KB 到几 MB，放在主线程解析会直接把界面卡住。
+     */
+    private fun openEpisodePanel(ch: Channel) {
+        if (destroyed) return
+        val show = PodcastCatalog.byName(ch.name) ?: return
+        panelShow = show
+        panelOpen = true
+        episodePanel.visibility = View.VISIBLE
+        listPanel.visibility = View.GONE
+        handler.removeCallbacks(hideInfo)
+        infoBar.visibility = View.GONE
+        episodeShowName.text = show.name
+        episodeShowMeta.text = show.author
+
+        val cached = podcastStore.memory(show.id)
+        if (cached != null) {
+            submitEpisodes(cached)
+        } else {
+            panelEpisodes = emptyList()
+            episodeAdapter.submit(emptyList(), currentEpisode?.id)
+            episodeEmpty.visibility = View.GONE
+            episodeLoading.visibility = View.VISIBLE
+            episodeShowMeta.text = "${show.author} · 正在获取分集…"
+            loadEpisodes(show)
+        }
+        handler.postDelayed({
+            if (destroyed || !panelOpen) return@postDelayed
+            val pos = episodeAdapter.positionOf(currentEpisode?.id)
+            focusEpisodeAt(if (pos >= 0) pos else 0)
+        }, 80)
+    }
+
+    private fun loadEpisodes(show: PodcastShow) {
+        val seq = ++podcastLoadSeq
+        Thread {
+            val list = runCatching { podcastStore.episodes(show) }.getOrElse { emptyList() }
+            runOnUiThread {
+                if (destroyed || isFinishing) return@runOnUiThread
+                // 用户可能已经退出或者换了一档：回来的是旧结果就丢掉
+                if (!panelOpen || panelShow?.id != show.id || seq != podcastLoadSeq) return@runOnUiThread
+                submitEpisodes(list)
+            }
+        }.start()
+    }
+
+    private fun submitEpisodes(list: List<PodcastEpisode>) {
+        panelEpisodes = list
+        episodeLoading.visibility = View.GONE
+        episodeAdapter.submit(list, currentEpisode?.id)
+        val author = panelShow?.author.orEmpty()
+        episodeShowMeta.text = if (list.isEmpty()) author else "$author · 共 ${list.size} 集"
+        if (list.isEmpty()) {
+            episodeEmpty.text = "这一档暂时取不到分集\n检查网络后再进来试试"
+            episodeEmpty.visibility = View.VISIBLE
+            return
+        }
+        episodeEmpty.visibility = View.GONE
+        val pos = episodeAdapter.positionOf(currentEpisode?.id)
+        focusEpisodeAt(if (pos >= 0) pos else 0)
+    }
+
+    private fun focusEpisodeAt(index: Int) {
+        if (index < 0 || index >= episodeAdapter.size()) return
+        (episodeList.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(
+            index, episodeList.height / 3
+        )
+        handler.postDelayed({
+            if (destroyed || !panelOpen) return@postDelayed
+            episodeList.findViewHolderForAdapterPosition(index)?.itemView?.requestFocus()
+        }, 40)
+    }
+
+    /** 关掉分集面板：回到两栏列表，焦点停在刚才那一档上 */
+    private fun closeEpisodePanel() {
+        if (!panelOpen) return
+        panelOpen = false
+        episodePanel.visibility = View.GONE
+        applyFullscreen(false, persist = false)
+        val pos = channelAdapter.positionOf(panelShow?.name ?: "")
+        if (pos >= 0) {
+            focusInGroups = false
+            channelList.requestFocus()
+            focusChannelAt(pos)
+        }
+    }
+
+    private fun playFocusedEpisode() {
+        val show = panelShow ?: return
+        val pos = episodeList.focusedChild?.let { episodeList.getChildAdapterPosition(it) } ?: -1
+        val ep = episodeAdapter.itemAt(if (pos >= 0) pos else 0) ?: return
+        playEpisode(show, ep)
+    }
+
+    /**
+     * 播一集。
+     *
+     * 和电台共用同一条「纯音频直通」的起播路径：不走预播双槽（槽里音轨是禁用的），
+     * 也不做清单广告过滤（m4a/mp3 不是 HLS，过滤器本来也帮不上忙）。
+     * 视频台的切台流水线一行没动。
+     */
+    private fun playEpisode(show: PodcastShow, ep: PodcastEpisode) {
+        if (destroyed) return
+        val ch = allChannels.firstOrNull { it.isPodcast && it.name == show.name }
+            ?: PodcastCatalog.asChannel(show)
+        CrashGuard.noteChannel(ch.name)
+        CrashGuard.notePhase("podcast")
+        // 换到另一集之前先把上一集的进度存下来，不然最多会丢 5 秒
+        if (currentEpisode != null) savePodcastPosition()
+        currentChannel = ch
+        currentEpisode = ep
+        radioMode = true
+        autoTries = 0
+        playStartedAt = SystemClock.uptimeMillis()
+        zapStartedAt = 0L
+        store.lastChannelName = ch.name
+        channelAdapter.setPlaying(ch.name)
+        errorHint.visibility = View.GONE
+        panelOpen = false
+        episodePanel.visibility = View.GONE
+        infoMeta.text = lineLabel(ch)
+        applyFullscreen(true, persist = true)
+        applyRadioUi(ch)
+        showInfo()
+        // 续播：听到一半的集接着上次的位置；只听了几秒、或已经快听完了就从头开始
+        val saved = store.podcastPosition(ep.id)
+        val dur = ep.durationMs
+        pendingSeekMs = if (saved > RESUME_MIN_MS && (dur <= 0 || saved < dur - RESUME_TAIL_MS)) saved else 0L
+        episodeAdapter.setPlaying(ep.id)
+        playDirect(ch, ep.url)
+        schedulePodcastTick()
+    }
+
+    /** 全屏上下键：上一集 / 下一集 */
+    private fun stepEpisode(dir: Int) {
+        val show = panelShow ?: PodcastCatalog.byName(currentChannel?.name ?: "") ?: return
+        val cur = currentEpisode ?: return
+        val list = panelEpisodes
+        if (list.size < 2) {
+            safeToast("这一档只取到一集")
+            return
+        }
+        val idx = list.indexOfFirst { it.id == cur.id }
+        val next = if (idx < 0) 0 else ((idx + dir) % list.size + list.size) % list.size
+        playEpisode(show, list[next])
+    }
+
+    /** 全屏左右键：快退 / 快进 */
+    private fun seekBy(deltaMs: Long) {
+        val p = player ?: return
+        val dur = p.duration.takeIf { it > 0L } ?: currentEpisode?.durationMs ?: 0L
+        if (dur <= 0L) return
+        val target = (p.currentPosition + deltaMs).coerceIn(0L, dur)
+        runCatching { p.seekTo(target) }
+        updatePodcastProgress()
+        safeToast(if (deltaMs > 0) "快进 15 秒" else "快退 15 秒")
+        showInfo()
+    }
+
+    private fun updatePodcastProgress() {
+        val p = player ?: return
+        val ep = currentEpisode ?: return
+        val pos = p.currentPosition.coerceAtLeast(0L)
+        val dur = p.duration.takeIf { it > 0L } ?: ep.durationMs
+        podcastBar.progress = if (dur > 0L) ((pos * 1000) / dur).toInt().coerceIn(0, 1000) else 0
+        podcastTime.text = fmtTime(pos) + " / " + (if (dur > 0L) fmtTime(dur) else "--:--") +
+            "　← → 前后 15 秒"
+    }
+
+    private val podcastTick = object : Runnable {
+        override fun run() {
+            if (destroyed || !resumed || currentEpisode == null) return
+            updatePodcastProgress()
+            if (++tickSaveCounter >= 5) {
+                tickSaveCounter = 0
+                savePodcastPosition()
+            }
+            handler.postDelayed(this, 1000L)
+        }
+    }
+
+    private fun schedulePodcastTick() {
+        handler.removeCallbacks(podcastTick)
+        handler.postDelayed(podcastTick, 1000L)
+    }
+
+    private fun stopPodcastTick() {
+        handler.removeCallbacks(podcastTick)
+        savePodcastPosition()
+    }
+
+    private fun savePodcastPosition() {
+        val ep = currentEpisode ?: return
+        val pos = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L)
+        if (pos > 0L) store.setPodcastPosition(ep.id, pos)
+    }
+
+    private fun fmtTime(ms: Long): String {
+        val s = (ms / 1000).coerceAtLeast(0L)
+        val h = s / 3600
+        val m = (s % 3600) / 60
+        val sec = s % 60
+        return if (h > 0) String.format(Locale.US, "%d:%02d:%02d", h, m, sec)
+        else String.format(Locale.US, "%02d:%02d", m, sec)
+    }
+
     // ---------------------------------------------------------------- 按键
 
     private fun handleOkShort() {
         if (fullscreen) {
+            // 播客全屏按 OK＝回到这一档的分集（点播的心智是「退一层」，不是「看频道表」）
+            val show = currentChannel
+            if (currentEpisode != null && show != null) {
+                openEpisodePanel(show)
+                return
+            }
             showListOnCurrentChannel()
             return
         }
@@ -1390,6 +1733,10 @@ class MainActivity : Activity() {
             return
         }
         val ch = focusedChannel() ?: return
+        if (ch.isPodcast) {
+            openEpisodePanel(ch)
+            return
+        }
         if (ch.name == currentChannel?.name) toggleFullscreen() else playChannel(ch)
     }
 
@@ -1403,6 +1750,23 @@ class MainActivity : Activity() {
                 code == KeyEvent.KEYCODE_DPAD_RIGHT)
         ) {
             return true
+        }
+
+        // ---- 分集面板：上下键交给 RecyclerView 自己挪焦点，其余按键在这里判 ----
+        if (panelOpen) {
+            if (isOk) {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) playFocusedEpisode()
+                return true
+            }
+            when (code) {
+                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    if (event.action == KeyEvent.ACTION_DOWN) closeEpisodePanel()
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN ->
+                    return super.dispatchKeyEvent(event)
+                else -> return true
+            }
         }
 
         // ---- OK / ENTER：短按与长按分开处理 ----
@@ -1459,6 +1823,12 @@ class MainActivity : Activity() {
                 //   焦点在左栏（列表展开）→ 收起面板，全屏播放
                 //   已经在全屏 → 唤出频道列表，焦点落回正在播的台
                 if (fullscreen) {
+                    // 播客全屏按返回＝回到这一档的分集，而不是跑去频道列表
+                    val show = currentChannel
+                    if (currentEpisode != null && show != null) {
+                        openEpisodePanel(show)
+                        return true
+                    }
                     showListOnCurrentChannel()
                     return true
                 }
@@ -1473,6 +1843,11 @@ class MainActivity : Activity() {
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
                 val up = code == KeyEvent.KEYCODE_DPAD_UP
                 if (fullscreen) {
+                    // 播客是点播：上下键＝上一集 / 下一集，比在空频道里切台有用
+                    if (currentEpisode != null) {
+                        stepEpisode(if (up) -1 else 1)
+                        return true
+                    }
                     // 全屏时上下键＝上一个 / 下一个频道（像电视遥控器的 CH+/-），
                     // 不唤出列表，只弹一条顶部 OSD 说明切到了哪个台
                     zapChannel(if (up) -1 else 1)
@@ -1483,6 +1858,11 @@ class MainActivity : Activity() {
             }
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 if (fullscreen) {
+                    // 播客全屏：左右键是快退/快进，不是唤出列表（返回键依然唤列表）
+                    if (currentEpisode != null) {
+                        seekBy(SEEK_STEP_MS)
+                        return true
+                    }
                     showListOnCurrentChannel()
                     return true
                 }
@@ -1492,6 +1872,10 @@ class MainActivity : Activity() {
             }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
                 if (fullscreen) {
+                    if (currentEpisode != null) {
+                        seekBy(-SEEK_STEP_MS)
+                        return true
+                    }
                     showListOnCurrentChannel()
                     return true
                 }
@@ -1540,6 +1924,8 @@ class MainActivity : Activity() {
         pendingDirect = null
         runCatching { player?.pause() }
         cancelPrebuffer()
+        // 播客进度落盘 + 停表：退后台绝不继续跑 1 秒一跳的进度刷新
+        stopPodcastTick()
         // 壁纸动画只在前台播电台时存在，退后台绝不空转
         radioBackdrop.setAnimating(false)
         runCatching { loadingBar.visibility = View.GONE }
@@ -1556,6 +1942,7 @@ class MainActivity : Activity() {
         }
         preSlots.forEach { s -> runCatching { s.player.stop(); s.player.clearMediaItems() } }
         cancelPrebuffer()
+        stopPodcastTick()
         radioBackdrop.setAnimating(false)
     }
 
@@ -1570,7 +1957,17 @@ class MainActivity : Activity() {
         // onStop 里 stop()+clearMediaItems() 会把播放器打回 IDLE，
         // 回来时只置 playWhenReady 会黑屏，必须重新起播（有线路直通表，很快）。
         val ch = currentChannel
-        if (ch != null && ch.urls.isNotEmpty() && player?.playbackState == Player.STATE_IDLE) {
+        val ep = currentEpisode
+        if (ch != null && ch.isPodcast && ep != null) {
+            // 播客：重新起播这一集，并按上次听到的位置续播
+            if (player?.playbackState == Player.STATE_IDLE) {
+                pendingSeekMs = store.podcastPosition(ep.id)
+                playDirect(ch, ep.url)
+            } else {
+                runCatching { player?.playWhenReady = true }
+            }
+            schedulePodcastTick()
+        } else if (ch != null && ch.urls.isNotEmpty() && player?.playbackState == Player.STATE_IDLE) {
             buildLineOrder(ch)
             val url = ch.urls.getOrElse(urlIndex) { "" }
             if (url.isNotEmpty()) playDirect(ch, url)
@@ -1586,6 +1983,7 @@ class MainActivity : Activity() {
         // 先立标志再动手：释放播放器会同步回调监听，此时绝不能再碰 View
         destroyed = true
         resumed = false
+        stopPodcastTick()
         radioBackdrop.setAnimating(false)
         handler.removeCallbacksAndMessages(null)
         pendingDirect = null
@@ -1628,6 +2026,15 @@ class MainActivity : Activity() {
 
         /** 极快连按时冷启动合并窗口：只影响 <120ms 的连按，预播命中不经过这里 */
         const val DIRECT_COALESCE_MS = 120L
+
+        /** 播客左右键一次跳 15 秒：一集动辄 40 分钟，跳太短等于没跳 */
+        const val SEEK_STEP_MS = 15_000L
+
+        /** 续播门槛：只听了不到 5 秒就当中途没听过，从头开始 */
+        const val RESUME_MIN_MS = 5_000L
+
+        /** 离结尾不到 10 秒也当成听完了，下次从头放（否则一进来就结束） */
+        const val RESUME_TAIL_MS = 10_000L
     }
 }
 

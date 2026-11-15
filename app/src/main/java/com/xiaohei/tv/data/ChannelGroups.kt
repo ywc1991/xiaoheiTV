@@ -5,9 +5,10 @@ import com.xiaohei.tv.model.Channel
 /**
  * 频道分组规则。
  *
- * 顺序：收藏 → 央视 → 卫视 → 港澳台 → 广播
+ * 顺序：收藏 → 央视 → 卫视 → 港澳台 → 广播 → 播客
  *
  * 「广播」是纯音频网络电台，独立成组，不参与视频台的全屏上下键循环。
+ * 「播客」是点播音频：一档节目一行，按 OK 打开分集面板，同样不进切台循环。
  * 注意：卫视规则排在港澳台之前，所以「香港卫视」「蓮花衛視」「世界卫视」
  * 会归入「卫视」，而不是「港澳台」。
  *
@@ -21,9 +22,10 @@ object ChannelGroups {
     const val SATELLITE = "卫视"
     const val HKMO_TW = "港澳台"
     const val RADIO = "广播"
+    const val PODCAST = "播客"
 
     /** 固定展示顺序（不再有「其他」） */
-    val ORDER = listOf(FAVORITE, CCTV, SATELLITE, HKMO_TW, RADIO)
+    val ORDER = listOf(FAVORITE, CCTV, SATELLITE, HKMO_TW, RADIO, PODCAST)
 
     private val cctvRegex = Regex("""^\s*(CCTV|CETV)""", RegexOption.IGNORE_CASE)
 
@@ -50,9 +52,16 @@ object ChannelGroups {
     }
 
     /**
-     * 全屏上下键与预播预测共用的切台序列：只保留和当前同类（视频 or 电台）的频道。
-     * 看电视时永远不会掉进黑屏有声的电台；只有整份清单只剩一种类型时才退回全量。
+     * 全屏上下键与预播预测共用的切台序列：只保留和当前同类（视频 / 电台）的频道。
+     *
+     * 播客永远不在序列里：节目行没有音频地址，混进来会变成「切到一条空频道」。
+     * 听广播时只在电台之间循环，看电视时只在视频台之间循环，互不掉坑。
      */
-    fun zapList(all: List<Channel>, inRadio: Boolean): List<Channel> =
-        all.filter { it.isAudio == inRadio }.ifEmpty { all }
+    fun zapList(all: List<Channel>, inRadio: Boolean): List<Channel> {
+        val pool = all.filter { !it.isPodcast }
+        val same = if (inRadio) pool.filter { it.isAudio } else pool.filter { !it.isAudio }
+        // 同类为空时退回「非播客全集」；只剩播客时返回空，让调用方直接不切台，
+        // 也好过把用户切进一条没有音频地址的节目行
+        return same.ifEmpty { pool }
+    }
 }
