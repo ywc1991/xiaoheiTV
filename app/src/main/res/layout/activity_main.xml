@@ -62,6 +62,25 @@
                 android:textSize="34sp"
                 tools:text="中国之声" />
 
+            <!-- 正在播放：只有流里真的带曲目信息才会显示（目前只有老式 ICY 流有），
+                 拿不到就显示「直播中」，绝不编造内容 -->
+            <TextView
+                android:id="@+id/radioNowPlaying"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:maxWidth="620dp"
+                android:shadowColor="#B3000000"
+                android:shadowDy="2"
+                android:shadowRadius="8"
+                android:textColor="@color/text_secondary"
+                android:textSize="15sp"
+                android:visibility="invisible"
+                tools:text="许嵩 - 多余的解释"
+                tools:visibility="visible" />
+
             <!-- 播客专用：这一集听到哪儿了。电台是直播，没有进度，所以只在播客态显示 -->
             <LinearLayout
                 android:id="@+id/podcastProgress"
