@@ -38,7 +38,7 @@ class PodcastStore(context: Context) {
         val remote = runCatching { fetch(show) }.getOrNull()
         if (!remote.isNullOrEmpty()) {
             memory[show.id] = remote
-            runCatching { writeCache(show.id, remote) }
+            runCatching { writeCache(show.id, remote, show.feed) }
             return remote
         }
 
@@ -60,7 +60,14 @@ class PodcastStore(context: Context) {
         val f = cacheFile(id)
         if (!f.exists()) return null
         return runCatching {
-            f.readLines().mapNotNull { line ->
+            val lines = f.readLines()
+            // 首行记着这份缓存属于哪个 feed：远端目录改了地址以后，
+            // 旧缓存里的分集已经不成立了，不能接着当「这一档的最新 40 集」用
+            val head = lines.firstOrNull().orEmpty()
+            if (!head.startsWith(FEED_TAG) || head.removePrefix(FEED_TAG).trim() != show.feed) {
+                return@runCatching null
+            }
+            lines.drop(1).mapNotNull { line ->
                 val p = line.split('\t')
                 if (p.size < 4) return@mapNotNull null
                 val title = unescape(p[0])
@@ -78,11 +85,12 @@ class PodcastStore(context: Context) {
         }.getOrNull()
     }
 
-    private fun writeCache(id: String, list: List<PodcastEpisode>) {
+    private fun writeCache(id: String, list: List<PodcastEpisode>, feed: String) {
         if (list.isEmpty()) return
         runCatching {
             if (!dir.exists()) dir.mkdirs()
             val sb = StringBuilder(list.size * 96)
+            sb.append(FEED_TAG).append(feed.replace('\t', ' ').replace('\n', ' ')).append('\n')
             for (e in list) {
                 sb.append(escape(e.title)).append('\t')
                     .append(e.url).append('\t')
@@ -128,6 +136,8 @@ class PodcastStore(context: Context) {
 
     private companion object {
         const val TTL_MS = 12 * 60 * 60 * 1000L
+        /** 缓存首行的来源标记，用来挡住「换了 feed 还在用旧分集」 */
+        const val FEED_TAG = "#feed\t"
         const val CONNECT_TIMEOUT_MS = 8_000
         const val READ_TIMEOUT_MS = 12_000
         const val UA = "XiaoHeiTV/2.9 (Android TV)"

@@ -4,10 +4,14 @@ import com.xiaohei.tv.model.Channel
 import com.xiaohei.tv.model.PodcastShow
 
 /**
- * 内置播客目录。
+ * 内置播客目录 + 远端目录的落点。
  *
  * 只内置「节目单 + RSS 地址」，分集在打开面板时按 RSS 实时拉取并缓存 12 小时——
  * 播客是持续更新的，把分集地址写死在 APK 里过几周就全是旧的。
+ *
+ * 节目单本身也不再只靠发版维护：GitHub 上有一份 `podcasts.json`，
+ * 启动时拉下来合并（见 [PodcastDirStore]）。[builtin] 永远是兜底，
+ * 远端文件缺了、坏了、拿不到，列表都退回这 11 档，不会变空。
  *
  * 这 11 个 RSS 都是 2026-11-15 在本机逐个实测过的：返回 200、能解析出分集、
  * 首集音频 Range 请求返回 206（mp3 / m4a 直链）。名单里不写需要登录、
@@ -15,7 +19,7 @@ import com.xiaohei.tv.model.PodcastShow
  */
 object PodcastCatalog {
 
-    val shows: List<PodcastShow> = listOf(
+    val builtin: List<PodcastShow> = listOf(
         PodcastShow(
             "storyfm", "故事FM", "故事 FM",
             "https://feeds.storyfm.cn/storyfm.xml",
@@ -74,6 +78,34 @@ object PodcastCatalog {
     )
 
     /**
+     * 当前生效的节目单。
+     *
+     * 会被远端目录整体替换，而读它的地方在主线程（建列表）和后台线程（拉分集）都有，
+     * 所以选择整体换引用而不是原地改：`@Volatile` + 不可变 List，读到的一定是一份完整快照。
+     */
+    @Volatile
+    private var active: List<PodcastShow> = builtin
+
+    val shows: List<PodcastShow> get() = active
+
+    /**
+     * 应用一份远端目录。[result] 为 null 表示没有可用目录，退回内置清单。
+     * 返回 true 表示节目单**确实变了**（调用方需要重排列表）。
+     */
+    fun apply(result: PodcastDir.Result?): Boolean {
+        val next = if (result == null) builtin
+        else PodcastDir.merge(builtin, result.shows, result.removed)
+        if (next == active) return false
+        active = next
+        return true
+    }
+
+    /** 单测用：把目录恢复成内置状态 */
+    fun reset() {
+        active = builtin
+    }
+
+    /**
      * 播客在左右两栏里就是「一档节目」这一行：
      * 没有线路表（音频地址要等打开面板才知道），所以 urls 为空，
      * 靠 isPodcast 让按键逻辑走「打开分集面板」而不是「直接起播」。
@@ -88,5 +120,5 @@ object PodcastCatalog {
         subtitle = show.author
     )
 
-    fun byName(name: String): PodcastShow? = shows.firstOrNull { it.name == name }
+    fun byName(name: String): PodcastShow? = active.firstOrNull { it.name == name }
 }

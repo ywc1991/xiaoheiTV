@@ -31,6 +31,7 @@ import com.xiaohei.tv.data.ChannelGroups
 import com.xiaohei.tv.data.EpgEntry
 import com.xiaohei.tv.data.EpgRepository
 import com.xiaohei.tv.data.PodcastCatalog
+import com.xiaohei.tv.data.PodcastDirStore
 import com.xiaohei.tv.data.PodcastStore
 import com.xiaohei.tv.data.SourceStore
 import com.xiaohei.tv.model.Channel
@@ -110,6 +111,8 @@ class MainActivity : Activity() {
     // 播客是点播：一档节目一行，按 OK 展开这一档的分集，选中哪集播哪集。
     // 分集不在 APK 里，打开面板时才按 RSS 拉取（PodcastStore 会缓存 12 小时）。
     private lateinit var podcastStore: PodcastStore
+    /** 远端节目单（GitHub 上的 podcasts.json）：启动时合并，改节目不用发版 */
+    private lateinit var podcastDir: PodcastDirStore
     private lateinit var episodePanel: View
     private lateinit var episodeList: RecyclerView
     private lateinit var episodeAdapter: EpisodeAdapter
@@ -312,6 +315,7 @@ class MainActivity : Activity() {
         episodeLoading = findViewById(R.id.episodeLoading)
         episodeEmpty = findViewById(R.id.episodeEmpty)
         podcastStore = PodcastStore(this)
+        podcastDir = PodcastDirStore(this)
         episodeAdapter = EpisodeAdapter(
             onPlay = { ep -> panelShow?.let { playEpisode(it, ep) } },
             positionOf = { ep -> store.podcastPosition(ep.id) }
@@ -619,6 +623,9 @@ class MainActivity : Activity() {
         loadingBar.visibility = View.VISIBLE
         val t0 = SystemClock.uptimeMillis()
         Thread {
+            // 远端节目单先落定：播客那几行是频道列表的一部分，
+            // 等列表建好再插进来就得重排 UI。读的是本地缓存（几 KB），不联网。
+            podcastDir.applyCache()
             val loaded = try {
                 store.loadChannels()
             } catch (e: Exception) {
@@ -628,7 +635,8 @@ class MainActivity : Activity() {
                 if (destroyed || isFinishing) return@runOnUiThread
                 Log.i("XiaoHeiTV", "channelsLoaded +${SystemClock.uptimeMillis() - t0}ms ${loaded.size} 频道")
                 loadingBar.visibility = View.GONE
-                // 播客节目单内置在 APK 里：一档节目就是列表里的一行，分集等打开面板再拉。
+                // 播客节目单：内置清单 + GitHub 上的远端目录（启动时合并）。
+                // 一档节目就是列表里的一行，分集等打开面板再拉。
                 // 它排在视频源之后，且切台序列里会被排除，所以不影响原有频道顺序与切台。
                 allChannels = loaded + PodcastCatalog.shows.map { PodcastCatalog.asChannel(it) }
                 if (allChannels.isEmpty()) {
@@ -662,8 +670,58 @@ class MainActivity : Activity() {
                 if (target.name == last) {
                     safeToast("继续播放：${target.name}")
                 }
+                // 界面已经能用了，再去后台问一次远端节目单：这一步慢、可以慢
+                refreshPodcastCatalog()
             }
         }.start()
+    }
+
+    /**
+     * 后台刷新远端播客目录。
+     *
+     * 只在节目单**真的变了**（加了一档、下线了一档、改了名）时才动列表：
+     * 平时这一步就是一次几 KB 的 GET，用户完全感觉不到。
+     */
+    private fun refreshPodcastCatalog() {
+        Thread {
+            val changed = runCatching { podcastDir.refresh() }.getOrDefault(false)
+            if (!changed) return@Thread
+            runOnUiThread {
+                if (destroyed || isFinishing) return@runOnUiThread
+                onPodcastCatalogChanged()
+            }
+        }.start()
+    }
+
+    /**
+     * 节目单变了以后重排「播客」那几行。
+     *
+     * 视频源顺序、当前在播的台、分组位置都不动；焦点原来停在哪个频道就还回哪个
+     * （那一档被删了才退回当前在播的台）。正在播的那一集不会被打断——
+     * 它自己的音频地址早已拿在手上，和节目单是否还有这一档无关。
+     */
+    private fun onPodcastCatalogChanged() {
+        val video = allChannels.filter { !it.isPodcast }
+        allChannels = video + PodcastCatalog.shows.map { PodcastCatalog.asChannel(it) }
+        Log.i("XiaoHeiTV", "podcastCatalog 更新：${PodcastCatalog.shows.size} 档")
+
+        val keepGroup = groupIndex
+        val focusName = if (!focusInGroups && !panelOpen) {
+            channelList.focusedChild?.let { channelList.getChildAdapterPosition(it) }
+                ?.let { channelAdapter.channelAt(it)?.name }
+        } else null
+
+        buildGroups(store.favorites)
+        selectGroup(keepGroup.coerceIn(0, (groups.size - 1).coerceAtLeast(0)))
+        if (panelOpen || fullscreen) return
+        if (focusInGroups) {
+            groupList.requestFocus()
+            focusGroupAt(groupIndex)
+        } else {
+            channelList.requestFocus()
+            val pos = channelAdapter.positionOf(focusName ?: currentChannel?.name ?: "")
+            focusChannelAt(if (pos >= 0) pos else 0)
+        }
     }
 
     private fun newPlayer(forPrebuffer: Boolean = false): ExoPlayer =
