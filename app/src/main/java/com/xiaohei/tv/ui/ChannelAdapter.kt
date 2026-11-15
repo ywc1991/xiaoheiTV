@@ -97,6 +97,7 @@ class ChannelAdapter(
             val epgTitle = epg[EpgRepository.normalize(c.name)]?.current?.title
             val metaText = when {
                 !epgTitle.isNullOrEmpty() -> epgTitle
+                c.isAudio -> "网络电台"
                 c.urls.size > 1 -> "${c.urls.size} 条线路"
                 else -> ""
             }

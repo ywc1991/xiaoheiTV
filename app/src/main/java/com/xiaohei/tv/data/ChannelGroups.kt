@@ -1,14 +1,18 @@
 package com.xiaohei.tv.data
 
+import com.xiaohei.tv.model.Channel
+
 /**
- * 频道分组规则（固定四个分组）。
+ * 频道分组规则。
  *
- * 顺序：收藏 → 央视 → 卫视 → 港澳台
+ * 顺序：收藏 → 央视 → 卫视 → 港澳台 → 广播
  *
+ * 「广播」是纯音频网络电台，独立成组，不参与视频台的全屏上下键循环。
  * 注意：卫视规则排在港澳台之前，所以「香港卫视」「蓮花衛視」「世界卫视」
  * 会归入「卫视」，而不是「港澳台」。
  *
- * 规则外的频道兜底归入「其他」（仅在存在时才显示，正常情况不会出现）。
+ * 没有「其他」分组：台名规则都不命中的频道，由解析器沿用清单里自带的
+ * group-title（如「地方台」）；清单也没写才并到「卫视」，频道一个都不会丢。
  */
 object ChannelGroups {
 
@@ -16,10 +20,10 @@ object ChannelGroups {
     const val CCTV = "央视"
     const val SATELLITE = "卫视"
     const val HKMO_TW = "港澳台"
-    const val OTHER = "其他"
+    const val RADIO = "广播"
 
-    /** 固定展示顺序 */
-    val ORDER = listOf(FAVORITE, CCTV, SATELLITE, HKMO_TW, OTHER)
+    /** 固定展示顺序（不再有「其他」） */
+    val ORDER = listOf(FAVORITE, CCTV, SATELLITE, HKMO_TW, RADIO)
 
     private val cctvRegex = Regex("""^\s*(CCTV|CETV)""", RegexOption.IGNORE_CASE)
 
@@ -34,13 +38,21 @@ object ChannelGroups {
 
     /**
      * 按台名归类，命中即停：
-     * 央视(CCTV/CETV) → 卫视 → 港澳台 → 其他
+     * 央视(CCTV/CETV) → 卫视 → 港澳台；都不命中返回空串，
+     * 交给 M3uParser 用清单自己的分组名兜底（不再产生「其他」）。
      */
     fun groupOf(name: String): String {
         val n = name.trim()
         if (cctvRegex.containsMatchIn(n)) return CCTV
         if (n.contains("卫视") || n.contains("衛視")) return SATELLITE
         if (hkmoTwKeywords.any { n.contains(it, ignoreCase = true) }) return HKMO_TW
-        return OTHER
+        return ""
     }
+
+    /**
+     * 全屏上下键与预播预测共用的切台序列：只保留和当前同类（视频 or 电台）的频道。
+     * 看电视时永远不会掉进黑屏有声的电台；只有整份清单只剩一种类型时才退回全量。
+     */
+    fun zapList(all: List<Channel>, inRadio: Boolean): List<Channel> =
+        all.filter { it.isAudio == inRadio }.ifEmpty { all }
 }

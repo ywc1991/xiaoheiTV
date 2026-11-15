@@ -44,7 +44,7 @@ import com.xiaohei.tv.ui.SettingsActivity
 /**
  * 两栏式频道浏览：
  *
- *   左栏＝分组（收藏 / 央视 / 卫视 / 港澳台 / 其他）
+ *   左栏＝分组（收藏 / 央视 / 卫视 / 港澳台 / 广播，自定义源自带分组追加在后）
  *   右栏＝当前选中分组下的频道
  *
  * 按键：
@@ -85,6 +85,17 @@ class MainActivity : Activity() {
 
     private var currentChannel: Channel? = null
     private var urlIndex = 0
+
+    /**
+     * 当前播的是不是纯音频网络电台。
+     * 预播槽为了防爆音把音轨整个禁用了，纯音频流进去会变成「没有轨可播」，
+     * 所以电台一律走直接起播；这个值还被清单过滤器跨线程读取，故用 volatile。
+     */
+    @Volatile
+    private var radioMode = false
+
+    private lateinit var radioOverlay: View
+    private lateinit var radioName: TextView
 
     /**
      * 当前频道的线路优先顺序（存 urls 的原始下标）。
@@ -243,6 +254,8 @@ class MainActivity : Activity() {
         infoProgram = findViewById(R.id.infoProgram)
         errorHint = findViewById(R.id.errorHint)
         loadingBar = findViewById(R.id.loadingBar)
+        radioOverlay = findViewById(R.id.radioOverlay)
+        radioName = findViewById(R.id.radioName)
 
         groupAdapter = GroupAdapter { index ->
             if (justLaunched()) return@GroupAdapter
@@ -300,12 +313,12 @@ class MainActivity : Activity() {
         if (favs.isNotEmpty()) buckets.add(GroupBucket(ChannelGroups.FAVORITE, favs))
 
         val byGroup = allChannels.groupBy { it.group }
-        for (g in listOf(ChannelGroups.CCTV, ChannelGroups.SATELLITE, ChannelGroups.HKMO_TW, ChannelGroups.OTHER)) {
+        for (g in ChannelGroups.ORDER.filter { it != ChannelGroups.FAVORITE }) {
             val list = byGroup[g] ?: continue
             if (list.isEmpty()) continue
             buckets.add(GroupBucket(g, list))
         }
-        // 规则外的分组兜底，避免丢频道
+        // 清单自带的分组名（如「地方台」）不在固定顺序里，兜底追加，避免丢频道
         for ((g, list) in byGroup) {
             if (g in ChannelGroups.ORDER || list.isEmpty()) continue
             buckets.add(GroupBucket(g, list))
@@ -454,6 +467,8 @@ class MainActivity : Activity() {
         if (destroyed || !resumed) return
         val ch = groups.getOrNull(groupIndex)?.channels?.getOrNull(focusedChannelPosition()) ?: return
         if (ch.name == currentChannel?.name) return
+        // 电台不走预播：槽里音轨是禁用的，纯音频流永远 READY 不了
+        if (ch.isAudio) return
         // 已经有槽在缓冲它了（可能是方向预测提前备的），别把现成数据丢掉
         if (preSlots.any { it.channel?.name == ch.name }) return
         val url = primaryUrl(ch) ?: return
@@ -477,7 +492,7 @@ class MainActivity : Activity() {
      */
     private fun zapChannel(offset: Int) {
         if (groups.isEmpty()) return
-        val flat = groups.flatMap { it.channels }.distinctBy { it.name }
+        val flat = zapChannels()
         if (flat.isEmpty()) return
         // 记住切台方向：下次预播就按这个方向猜「下一个台」，连按 ↓ 时会一路命中
         if (offset != 0) lastZapDir = if (offset > 0) 1 else -1
@@ -596,7 +611,9 @@ class MainActivity : Activity() {
             .setLoadControl(buildLoadControl(forPrebuffer))
             .setMediaSourceFactory(
                 // 播放列表先经广告过滤器再交给解码器：只改清单，不动画面
-                DefaultMediaSourceFactory(AdFilterDataSourceFactory(this) { store.adBlock })
+                // 视频清单才做广告剔除；电台清单分片时长均匀、没有视频插播块，
+                // 走过滤器既无收益又可能误删分片，所以整组直通。
+                DefaultMediaSourceFactory(AdFilterDataSourceFactory(this) { store.adBlock && !radioMode })
                     // 免费源的死线路占比很高，而库默认会重试 3 次、每次还退避等待：
                     // 实测一条连不上的线路要白等 4.3 秒才轮到下一条，用户看到的就是「点了没反应」。
                     // 这里改成不重试——失败立刻回来，由错误回调直接换下一条，
@@ -950,9 +967,15 @@ class MainActivity : Activity() {
     private fun prebufferNext() {
         if (destroyed || !resumed) return
         val cur = currentChannel ?: return
+        // 听广播时不开预播：槽里禁用了音轨，而且广播不需要「秒切画面」，
+        // 多开两路流只是白吃带宽和解码器。
+        if (cur.isAudio) {
+            if (preSlots.any { it.channel != null }) cancelPrebuffer()
+            return
+        }
         if (preSlots.isEmpty()) return
         runCatching {
-            val flat = flatChannels()
+            val flat = zapChannels()
             val n = flat.size
             if (n < 2) return
             val i = flat.indexOfFirst { it.name == cur.name }
@@ -1001,8 +1024,17 @@ class MainActivity : Activity() {
         }.onFailure { Log.d("XiaoHeiTV", "prebufferNext 跳过 ${it.javaClass.simpleName}") }
     }
 
-    private fun flatChannels(): List<Channel> =
-        groups.flatMap { it.channels }.distinctBy { it.name }
+    /**
+     * 全屏上下键与预播预测共用的频道序列。
+     *
+     * 看电视时只循环视频台，听广播时只循环电台：按一下 ↓ 不会从电视掉进
+     * 黑屏有声的广播，听广播时也不会偷偷预播两路视频。
+     */
+    private fun zapChannels(): List<Channel> {
+        val all = groups.flatMap { it.channels }.distinctBy { "${it.isAudio}:${it.name}" }
+        if (all.isEmpty()) return emptyList()
+        return ChannelGroups.zapList(all, currentChannel?.isAudio == true)
+    }
 
     private fun mediaItemOf(url: String): MediaItem =
         MediaItem.Builder()
@@ -1037,6 +1069,7 @@ class MainActivity : Activity() {
         }
 
         currentChannel = channel
+        radioMode = channel.isAudio
         autoTries = 0
         playStartedAt = SystemClock.uptimeMillis()
         zapStartedAt = playStartedAt
@@ -1131,7 +1164,16 @@ class MainActivity : Activity() {
         if (player == null) return
         Log.i("XiaoHeiTV", "play ${ch.name} line[${urlIndex + 1}/${ch.urls.size}] = $url")
 
-        infoMeta.text = "${ch.group} · 线路 ${orderPos + 1}/${ch.urls.size.coerceAtLeast(1)}"
+        infoMeta.text = lineLabel(ch)
+        applyRadioUi(ch)
+
+        // 音频台（以及刚从音频台切回视频）一律直接起播：
+        // 预播槽把音轨整个禁用了，纯音频流进去会没有轨可播；而电台只有几十 KB
+        // 的清单和 64k 分片，冷启动本来就在 1 秒内，不需要秒切流水线。
+        if (ch.isAudio || activeChannel?.isAudio == true) {
+            playDirect(ch, url)
+            return
+        }
 
         // ① 有槽已经把这个台缓冲好了：直接换画面，这是「秒切」的那条路。
         //    流水线里两个槽都可能命中，谁先 READY 用谁。
@@ -1236,7 +1278,17 @@ class MainActivity : Activity() {
     private fun clearZapPending() {
         loadingBar.visibility = View.GONE
         val ch = currentChannel ?: return
-        infoMeta.text = "${ch.group} · 线路 ${orderPos + 1}/${ch.urls.size.coerceAtLeast(1)}"
+        infoMeta.text = lineLabel(ch)
+    }
+
+    private fun lineLabel(ch: Channel): String =
+        (if (ch.isAudio) "网络电台" else ch.group) +
+            " · 线路 ${orderPos + 1}/${ch.urls.size.coerceAtLeast(1)}"
+
+    /** 电台没有画面：盖一层台名，避免黑屏被误认为「没播出来」 */
+    private fun applyRadioUi(ch: Channel) {
+        radioOverlay.visibility = if (ch.isAudio) View.VISIBLE else View.GONE
+        if (ch.isAudio) radioName.text = ch.name
     }
 
     private fun showInfo() {

@@ -205,3 +205,41 @@ https://d3e05csss9c272.cloudfront.net/out/v1/f0bf71c57581470fb9379f603e8f5d83/CG
 https://mobile.ccdntech.com/transcoder/_definst_/vod164_Live/live/chunklist_w1177047531.m3u8
 #EXTINF:-1 tvg-logo="https://live.fanmingming.com/tv/%E7%BE%8E%E5%A5%BD%E7%94%9F%E6%B4%BB%E5%8F%B0.png" group-title="港澳台",美好生活台
 https://5ddce30eb4b55.streamlock.net/bltvhd/bltv1/playlist.m3u8
+#EXTINF:-1 group-title="广播",中国之声
+https://ngcdn001.cnr.cn/live/zgzs/index.m3u8
+http://ngcdn002.cnr.cn/live/zgzs/index.m3u8
+https://lhttp.qtfm.cn/live/15318317/64k.mp3
+#EXTINF:-1 group-title="广播",经济之声
+http://ngcdn002.cnr.cn/live/jjzs/index.m3u8
+#EXTINF:-1 group-title="广播",音乐之声
+https://ngcdn001.cnr.cn/live/yyzs/index.m3u8
+#EXTINF:-1 group-title="广播",环球资讯广播
+http://sk.cri.cn/905.m3u8
+#EXTINF:-1 group-title="广播",华语环球广播
+http://sk.cri.cn/hyhq.m3u8
+#EXTINF:-1 group-title="广播",南海之声
+http://sk.cri.cn/nhzs.m3u8
+#EXTINF:-1 group-title="广播",北京新闻广播
+https://ls.qingting.fm/live/339/64k.m3u8
+https://lhttp.qtfm.cn/live/339/64k.mp3
+#EXTINF:-1 group-title="广播",上海动感101
+https://ls.qingting.fm/live/274/64k.m3u8
+https://lhttp.qingting.fm/live/274/64k.mp3
+#EXTINF:-1 group-title="广播",第一财经广播
+https://ls.qingting.fm/live/276/64k.m3u8
+http://lhttp.qingting.fm/live/276/64k.mp3
+#EXTINF:-1 group-title="广播",上海经典音乐广播
+https://ls.qingting.fm/live/267/64k.m3u8
+https://lhttp.qingting.fm/live/267/64k.mp3
+#EXTINF:-1 group-title="广播",广东音乐之声
+https://ls.qingting.fm/live/1260/64k.m3u8
+https://lhttp.qtfm.cn/live/1260/64k.mp3
+#EXTINF:-1 group-title="广播",广东珠江经济台
+https://ls.qingting.fm/live/1259/64k.m3u8
+https://lhttp.qtfm.cn/live/1259/64k.mp3
+#EXTINF:-1 group-title="广播",江苏经典流行音乐广播
+https://ls.qingting.fm/live/4938/64k.m3u8
+https://lhttp.qtfm.cn/live/4938/64k.mp3
+#EXTINF:-1 group-title="广播",AsiaFM亚洲音乐台
+https://ls.qingting.fm/live/4581/64k.m3u8
+https://lhttp.qingting.fm/live/4581/64k.mp3
