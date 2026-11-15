@@ -40,6 +40,7 @@ import com.xiaohei.tv.model.PodcastShow
 import com.xiaohei.tv.player.AdFilter
 import com.xiaohei.tv.player.AdFilterDataSourceFactory
 import com.xiaohei.tv.player.AdRules
+import com.xiaohei.tv.player.IcyDataSourceFactory
 import com.xiaohei.tv.player.TlsRelax
 import com.xiaohei.tv.ui.ChannelAdapter
 import com.xiaohei.tv.ui.EpisodeAdapter
@@ -105,6 +106,7 @@ class MainActivity : Activity() {
     private lateinit var radioOverlay: View
     private lateinit var radioName: TextView
     private lateinit var radioKicker: TextView
+    private lateinit var radioNowPlaying: TextView
     private lateinit var radioBackdrop: RadioBackdropView
 
     // ---------------------------------------------------------------- 播客
@@ -305,6 +307,7 @@ class MainActivity : Activity() {
         radioBackdrop.setConservative(conservative)
 
         radioKicker = findViewById(R.id.radioKicker)
+        radioNowPlaying = findViewById(R.id.radioNowPlaying)
         podcastProgress = findViewById(R.id.podcastProgress)
         podcastBar = findViewById(R.id.podcastBar)
         podcastTime = findViewById(R.id.podcastTime)
@@ -749,7 +752,19 @@ class MainActivity : Activity() {
                 // 播放列表先经广告过滤器再交给解码器：只改清单，不动画面
                 // 视频清单才做广告剔除；电台清单分片时长均匀、没有视频插播块，
                 // 走过滤器既无收益又可能误删分片，所以整组直通。
-                DefaultMediaSourceFactory(AdFilterDataSourceFactory(this) { store.adBlock && !radioMode })
+                DefaultMediaSourceFactory(
+                    // 最外层是 ICY 曲目读取：只在电台态、且服务器真的带曲目信息时才介入，
+                    // 视频与 HLS 切片原样直通（响应头里没有 icy-metaint 就不会被碰）。
+                    IcyDataSourceFactory(
+                        AdFilterDataSourceFactory(
+                            this,
+                            enabled = { store.adBlock && !radioMode },
+                            icyMeta = { radioMode }
+                        ),
+                        enabled = { radioMode },
+                        onTitle = ::onRadioTitle
+                    )
+                )
                     // 免费源的死线路占比很高，而库默认会重试 3 次、每次还退避等待：
                     // 实测一条连不上的线路要白等 4.3 秒才轮到下一条，用户看到的就是「点了没反应」。
                     // 这里改成不重试——失败立刻回来，由错误回调直接换下一条，
@@ -1453,6 +1468,33 @@ class MainActivity : Activity() {
     }
 
     /** 电台没有画面：动态壁纸铺底 + 台名居中，避免黑屏被误认为「没播出来」 */
+    /** 流里报上来的曲目；null 表示这个台还没给出（多数台本来就不发） */
+    private var nowPlayingTitle: String? = null
+
+    /** 等了 [NOW_PLAYING_WAIT_MS] 还没有曲目就别一直空着——大多数台确实没有这个信息 */
+    private val nowPlayingFallback = Runnable {
+        if (!destroyed && radioMode && nowPlayingTitle == null) {
+            radioNowPlaying.text = "直播中 · 该台未提供曲目信息"
+            radioNowPlaying.visibility = View.VISIBLE
+        }
+    }
+
+    /**
+     * ICY 曲目回调。注意它跑在播放器的**加载线程**上：
+     * 一是必须切回主线程改界面，二是绝不能往上抛异常（会把电台直接打断）。
+     */
+    private fun onRadioTitle(title: String) {
+        handler.post {
+            if (destroyed || !radioMode) return@post
+            handler.removeCallbacks(nowPlayingFallback)
+            nowPlayingTitle = title
+            // 后台核对用：曲目来自流内元数据，不是猜的
+            Log.d("XiaoHeiTV", "曲目 ${currentChannel?.name}: $title")
+            radioNowPlaying.text = title
+            radioNowPlaying.visibility = View.VISIBLE
+        }
+    }
+
     private fun applyRadioUi(ch: Channel) {
         val audio = ch.isAudio
         radioOverlay.visibility = if (audio) View.VISIBLE else View.GONE
@@ -1479,7 +1521,22 @@ class MainActivity : Activity() {
             }
             // 换台换配色，同一个台永远同一套
             radioBackdrop.setStation(ch.name)
+
+            // 上一台的曲目必须先清掉，否则「中国之声」下面会挂着上海台的歌
+            nowPlayingTitle = null
+            handler.removeCallbacks(nowPlayingFallback)
+            if (podcast) {
+                // 播客的标题上面已经写了这一集的名字，这行留着只是占位
+                radioNowPlaying.visibility = View.GONE
+            } else {
+                radioNowPlaying.text = ""
+                // 占位而不是 GONE：曲目一到就填字，布局不会跟着跳一下
+                radioNowPlaying.visibility = View.INVISIBLE
+                handler.postDelayed(nowPlayingFallback, NOW_PLAYING_WAIT_MS)
+            }
         } else {
+            nowPlayingTitle = null
+            handler.removeCallbacks(nowPlayingFallback)
             podcastProgress.visibility = View.GONE
             stopPodcastTick()
         }
@@ -2061,6 +2118,9 @@ class MainActivity : Activity() {
     private fun prebufferTimeoutMs(): Long = if (conservative) 2_800L else PREBUFFER_TIMEOUT_MS
 
     private companion object {
+        /** 10s：等这么久还没有曲目，就当这个台不发元数据 */
+        const val NOW_PLAYING_WAIT_MS = 10_000L
+
         /** 5s：低于这个量再出图，网一抖就卡 */
         const val MIN_BUFFER_MS = 5_000
 
