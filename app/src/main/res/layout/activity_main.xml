@@ -14,34 +14,53 @@
         android:focusable="false"
         android:focusableInTouchMode="false" />
 
-    <!-- 纯音频网络电台：没有画面时显示台名，避免一片黑屏让人以为没在播 -->
-    <LinearLayout
+    <!-- 纯音频网络电台：动态壁纸铺底，台名居中，避免一片黑屏让人以为没在播 -->
+    <FrameLayout
         android:id="@+id/radioOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@color/bg_main"
-        android:gravity="center"
-        android:orientation="vertical"
         android:visibility="gone">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:letterSpacing="0.16"
-            android:text="网络电台 · 正在播放"
-            android:textColor="@color/text_tertiary"
-            android:textSize="12sp" />
+        <!-- 只在电台态绘制；切回视频台父容器立刻 GONE，视频链路一帧都不会多画 -->
+        <com.xiaohei.tv.ui.RadioBackdropView
+            android:id="@+id/radioBackdrop"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no" />
 
-        <TextView
-            android:id="@+id/radioName"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:fontFamily="sans-serif-medium"
-            android:textColor="@color/text_primary"
-            android:textSize="34sp"
-            tools:text="中国之声" />
-    </LinearLayout>
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.16"
+                android:shadowColor="#B3000000"
+                android:shadowDy="2"
+                android:shadowRadius="8"
+                android:text="网络电台 · 正在播放"
+                android:textColor="@color/text_tertiary"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/radioName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:fontFamily="sans-serif-medium"
+                android:shadowColor="#CC000000"
+                android:shadowDy="3"
+                android:shadowRadius="14"
+                android:textColor="@color/text_primary"
+                android:textSize="34sp"
+                tools:text="中国之声" />
+        </LinearLayout>
+    </FrameLayout>
 
     <!-- 顶部信息：黑→透明的渐变，内容贴上沿，和画面自然融合 -->
     <LinearLayout

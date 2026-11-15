@@ -39,6 +39,7 @@ import com.xiaohei.tv.player.TlsRelax
 import com.xiaohei.tv.ui.ChannelAdapter
 import com.xiaohei.tv.ui.GroupAdapter
 import com.xiaohei.tv.ui.GroupEntry
+import com.xiaohei.tv.ui.RadioBackdropView
 import com.xiaohei.tv.ui.SettingsActivity
 
 /**
@@ -96,6 +97,7 @@ class MainActivity : Activity() {
 
     private lateinit var radioOverlay: View
     private lateinit var radioName: TextView
+    private lateinit var radioBackdrop: RadioBackdropView
 
     /**
      * 当前频道的线路优先顺序（存 urls 的原始下标）。
@@ -256,6 +258,9 @@ class MainActivity : Activity() {
         loadingBar = findViewById(R.id.loadingBar)
         radioOverlay = findViewById(R.id.radioOverlay)
         radioName = findViewById(R.id.radioName)
+        radioBackdrop = findViewById(R.id.radioBackdrop)
+        // 老电视（DeviceProfile 保守档）自动降帧、少光晕；标准档用完整效果
+        radioBackdrop.setConservative(conservative)
 
         groupAdapter = GroupAdapter { index ->
             if (justLaunched()) return@GroupAdapter
@@ -1285,10 +1290,17 @@ class MainActivity : Activity() {
         (if (ch.isAudio) "网络电台" else ch.group) +
             " · 线路 ${orderPos + 1}/${ch.urls.size.coerceAtLeast(1)}"
 
-    /** 电台没有画面：盖一层台名，避免黑屏被误认为「没播出来」 */
+    /** 电台没有画面：动态壁纸铺底 + 台名居中，避免黑屏被误认为「没播出来」 */
     private fun applyRadioUi(ch: Channel) {
-        radioOverlay.visibility = if (ch.isAudio) View.VISIBLE else View.GONE
-        if (ch.isAudio) radioName.text = ch.name
+        val audio = ch.isAudio
+        radioOverlay.visibility = if (audio) View.VISIBLE else View.GONE
+        if (audio) {
+            radioName.text = ch.name
+            // 换台换配色，同一个台永远同一套
+            radioBackdrop.setStation(ch.name)
+        }
+        // 视频态一帧都不画；退后台（resumed=false）同样停表
+        radioBackdrop.setAnimating(audio && resumed)
     }
 
     private fun showInfo() {
@@ -1528,6 +1540,8 @@ class MainActivity : Activity() {
         pendingDirect = null
         runCatching { player?.pause() }
         cancelPrebuffer()
+        // 壁纸动画只在前台播电台时存在，退后台绝不空转
+        radioBackdrop.setAnimating(false)
         runCatching { loadingBar.visibility = View.GONE }
     }
 
@@ -1542,6 +1556,7 @@ class MainActivity : Activity() {
         }
         preSlots.forEach { s -> runCatching { s.player.stop(); s.player.clearMediaItems() } }
         cancelPrebuffer()
+        radioBackdrop.setAnimating(false)
     }
 
     override fun onResume() {
@@ -1562,6 +1577,8 @@ class MainActivity : Activity() {
         } else {
             runCatching { player?.playWhenReady = true }
         }
+        // 回到前台时恢复壁纸（电台态才开，视频态保持关闭）
+        radioBackdrop.setAnimating(radioMode)
         schedulePrebufferNext()
     }
 
@@ -1569,6 +1586,7 @@ class MainActivity : Activity() {
         // 先立标志再动手：释放播放器会同步回调监听，此时绝不能再碰 View
         destroyed = true
         resumed = false
+        radioBackdrop.setAnimating(false)
         handler.removeCallbacksAndMessages(null)
         pendingDirect = null
         pendingPrebufferStarts.clear()
