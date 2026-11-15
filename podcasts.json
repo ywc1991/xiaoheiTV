@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "updated": "2026-11-15",
+  "note": "小黑TV 播客节目单。改完 push 到 main 分支，电视下次启动自动生效，不用发版。字段：id（小写字母/数字/下划线/短横线，会当缓存文件名用）、name、author、feed（RSS 地址，必须是 http/https）、desc；enabled 写 false 可以下线一档（内置的也能下线），缺省为 true。最多 40 档。",
+  "shows": [
+    {
+      "id": "storyfm",
+      "name": "故事FM",
+      "author": "故事 FM",
+      "feed": "https://feeds.storyfm.cn/storyfm.xml",
+      "desc": "亲历者口述的真实故事",
+      "enabled": true
+    },
+    {
+      "id": "huzuohuyou",
+      "name": "忽左忽右",
+      "author": "JustPod",
+      "feed": "https://feed.xyzfm.space/cv4bkgpuglwp",
+      "desc": "一档关于历史、社会与思想的对谈节目",
+      "enabled": true
+    },
+    {
+      "id": "shengdongjixi",
+      "name": "声东击西",
+      "author": "ETW Studio",
+      "feed": "https://feeds.fireside.fm/shengdongjixi/rss",
+      "desc": "把世界另一端的声音带到耳边",
+      "enabled": true
+    },
+    {
+      "id": "daneimitan",
+      "name": "大内密谈",
+      "author": "大内密谈",
+      "feed": "https://rss.lizhi.fm/rss/14275.xml",
+      "desc": "生活方式与脑洞漫谈",
+      "enabled": true
+    },
+    {
+      "id": "wenhuayouxian",
+      "name": "文化有限",
+      "author": "文化有限",
+      "feed": "https://s1.proxy.wavpub.com/weknownothing.xml",
+      "desc": "三个爱读书的人聊书",
+      "enabled": true
+    },
+    {
+      "id": "bowuzhi",
+      "name": "博物志",
+      "author": "小黄鱼播客",
+      "feed": "https://bowuzhi.typlog.io/feed/audio.xml",
+      "desc": "博物馆、展览与文物里的细节",
+      "enabled": true
+    },
+    {
+      "id": "liangyongan",
+      "name": "梁永安的播客",
+      "author": "梁永安",
+      "feed": "https://feed.xyzfm.space/tbalbybjc3ev",
+      "desc": "复旦教授聊文学与年轻人的处境",
+      "enabled": true
+    },
+    {
+      "id": "ritanwuyu",
+      "name": "日谈物语",
+      "author": "日谈公园",
+      "feed": "https://feed.xyzfm.space/87x9n4x77fpy",
+      "desc": "日谈公园出品的纪实故事",
+      "enabled": true
+    },
+    {
+      "id": "dongyaguancha",
+      "name": "东亚观察局",
+      "author": "东亚观察局",
+      "feed": "https://feed.xyzfm.space/eye-on-east-asia",
+      "desc": "东亚时事与社会观察",
+      "enabled": true
+    },
+    {
+      "id": "mianji",
+      "name": "面基",
+      "author": "面基",
+      "feed": "https://feed.xyzfm.space/6hpdgggtxpxb",
+      "desc": "和各行各业的人聊聊他们怎么想",
+      "enabled": true
+    },
+    {
+      "id": "rizhilu",
+      "name": "日知录",
+      "author": "日谈公园",
+      "feed": "https://feed.xyzfm.space/6fqtp9h4u8vm",
+      "desc": "日常里那些值得记下来的知识",
+      "enabled": true
+    },
+    {
+      "id": "kernelpanic",
+      "name": "内核恐慌",
+      "author": "吴涛、Rio",
+      "feed": "https://pan.icu/feed",
+      "desc": "号称硬核却没什么干货的信息技术闲聊",
+      "enabled": true
+    },
+    {
+      "id": "pythonhunter",
+      "name": "捕蛇者说",
+      "author": "pythonhunter",
+      "feed": "https://pythonhunter.org/feed",
+      "desc": "几个写 Python 的人聊技术与职业",
+      "enabled": true
+    },
+    {
+      "id": "anywayfm",
+      "name": "Anyway.FM",
+      "author": "JJ Ying & Leon Gao",
+      "feed": "https://anyway.fm/rss.xml",
+      "desc": "两位设计师聊视觉设计",
+      "enabled": true
+    }
+  ]
+}
