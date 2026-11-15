@@ -48,6 +48,7 @@ import com.xiaohei.tv.ui.GroupAdapter
 import com.xiaohei.tv.ui.GroupEntry
 import com.xiaohei.tv.ui.RadioBackdropView
 import com.xiaohei.tv.ui.SettingsActivity
+import com.xiaohei.tv.ui.ZapPredict
 import java.util.Locale
 
 /**
@@ -86,6 +87,15 @@ class MainActivity : Activity() {
     private lateinit var infoProgram: TextView
     private lateinit var errorHint: TextView
     private lateinit var loadingBar: ProgressBar
+
+    /** 切台等待卡片：把「黑屏 4 秒」变成「正在连接 湖南卫视 2 秒」，出首帧立刻收起 */
+    private lateinit var zapPanel: View
+    private lateinit var zapName: TextView
+    private lateinit var zapStatus: TextView
+
+    /** 等待起点与当前显示的台：换台要重新计时，同一个台重复调用不能把秒数清零 */
+    private var zapPendingSince = 0L
+    private var zapPendingChannel: String? = null
 
     private var player: ExoPlayer? = null
     private var allChannels: List<Channel> = emptyList()
@@ -300,6 +310,9 @@ class MainActivity : Activity() {
         infoProgram = findViewById(R.id.infoProgram)
         errorHint = findViewById(R.id.errorHint)
         loadingBar = findViewById(R.id.loadingBar)
+        zapPanel = findViewById(R.id.zapPanel)
+        zapName = findViewById(R.id.zapName)
+        zapStatus = findViewById(R.id.zapStatus)
         radioOverlay = findViewById(R.id.radioOverlay)
         radioName = findViewById(R.id.radioName)
         radioBackdrop = findViewById(R.id.radioBackdrop)
@@ -1147,11 +1160,10 @@ class MainActivity : Activity() {
             if (n < 2) return
             val i = flat.indexOfFirst { it.name == cur.name }
             if (i < 0) return
-            val dir = lastZapDir
-            val targets = ArrayList<Channel>(2)
-            targets += flat[((i + dir) % n + n) % n]
-            if (fullscreen && n >= 3) targets += flat[((i + 2 * dir) % n + n) % n]
-            targets.removeAll { it.name == cur.name }
+            // 预测顺序见 ZapPredict：同方向下一台 → 来时的上一台 → 同方向再下一台。
+            // 把「来时那个台」提到第二位是为「广告时间切走、广告结束切回」准备的——
+            // 这个动作在电视上比连按同向常见得多，而老顺序会让它每次都冷启动 4 秒起步。
+            val targets = ZapPredict.targets(i, n, lastZapDir, preSlots.size).map { flat[it] }
             if (targets.isEmpty()) return
 
             // 已经在缓冲目标台的槽一律原样保留：停一下就得重新冷启动 2.5 秒，太亏。
@@ -1432,7 +1444,14 @@ class MainActivity : Activity() {
     /** 地址里带 m3u8 就按 HLS 处理；没有后缀的（罕见）留给播放器自己判断 */
     private fun isHls(url: String): Boolean {
         val path = url.substringBefore('?').lowercase()
-        return path.endsWith(".m3u8") || path.endsWith(".m3u")
+        if (path.endsWith(".m3u8") || path.endsWith(".m3u")) return true
+        // 少数台（翡翠台 https://…/163189/fct/）清单地址是目录形式，没有扩展名。
+        // 不给 MIME 提示时 ExoPlayer 会用提取器逐个嗅探，最后一个都对不上，
+        // 直接抛 UnrecognizedInputFormatException —— 实测就是「翡翠台永远黑屏」。
+        // 渐进式流（mp4/ts/flv/mkv）一定带扩展名，所以「末段没有点」判为 HLS 是安全的；
+        // 内置清单里目前只有翡翠台命中这一条。
+        val last = path.trimEnd('/').substringAfterLast('/')
+        return !last.contains('.')
     }
 
     /**
@@ -1448,10 +1467,45 @@ class MainActivity : Activity() {
             handler.removeCallbacks(hideInfo)
         }
         loadingBar.visibility = View.VISIBLE
+        // 电台/播客没有「等画面」这回事（纯音频流清单只有几十 KB，起播在 1 秒内），
+        // 弹卡片只会闪一下，反而像卡顿
+        if (ch.isAudio || destroyed || !resumed) return
+        // 视频台改用带台名和秒数的卡片，那个 36dp 的小转圈同时留着会显得很乱
+        loadingBar.visibility = View.GONE
+        // 连按切台会反复进来：同一个台不清零，换了台才重新计时
+        if (zapPanel.visibility == View.VISIBLE && zapPendingChannel == ch.name) return
+        zapPendingChannel = ch.name
+        zapPendingSince = SystemClock.uptimeMillis()
+        zapName.text = ch.name
+        zapStatus.text = ZAP_TEXT_CONNECT
+        zapPanel.visibility = View.VISIBLE
+        handler.removeCallbacks(zapTick)
+        handler.postDelayed(zapTick, ZAP_TICK_MS)
+    }
+
+    /**
+     * 等待计时。慢台的冷启动实测 4~8 秒（瓶颈在服务器 TTFB，客户端压不掉），
+     * 这段时间如果屏幕只有一个 36dp 的转圈，用户会以为按键没生效、再按一次，
+     * 于是又冷启动一路流，越按越慢。秒数一亮，用户就知道系统在干活。
+     */
+    private val zapTick = object : Runnable {
+        override fun run() {
+            if (destroyed || zapPanel.visibility != View.VISIBLE) return
+            val waited = SystemClock.uptimeMillis() - zapPendingSince
+            zapStatus.text = when {
+                waited < ZAP_SLOW_MS -> ZAP_TEXT_CONNECT
+                waited < ZAP_LONG_MS -> ZAP_TEXT_SLOW
+                else -> "已等待 ${waited / 1000} 秒"
+            }
+            handler.postDelayed(this, ZAP_TICK_MS)
+        }
     }
 
     private fun clearZapPending() {
         loadingBar.visibility = View.GONE
+        handler.removeCallbacks(zapTick)
+        zapPanel.visibility = View.GONE
+        zapPendingChannel = null
         val ch = currentChannel ?: return
         infoMeta.text = lineLabel(ch)
     }
@@ -2044,6 +2098,10 @@ class MainActivity : Activity() {
         // 壁纸动画只在前台播电台时存在，退后台绝不空转
         radioBackdrop.setAnimating(false)
         runCatching { loadingBar.visibility = View.GONE }
+        // 等待卡片也要一起收：退后台再回来时它已经不再表示任何真实的等待
+        handler.removeCallbacks(zapTick)
+        runCatching { zapPanel.visibility = View.GONE }
+        zapPendingChannel = null
     }
 
     override fun onStop() {
@@ -2120,6 +2178,18 @@ class MainActivity : Activity() {
     private companion object {
         /** 10s：等这么久还没有曲目，就当这个台不发元数据 */
         const val NOW_PLAYING_WAIT_MS = 10_000L
+
+        /** 切台等待卡片的刷新间隔：500ms 够让秒数读起来自然，又不至于每次都重排文字 */
+        const val ZAP_TICK_MS = 500L
+
+        /** 超过这个时长还没出图，文案从「正在连接」换成「线路较慢」——实测慢台 TTFB 就有 1.2~4.4s */
+        const val ZAP_SLOW_MS = 1_500L
+
+        /** 再超过这个时长就直接报秒数：用户此时已经在怀疑是不是卡死了 */
+        const val ZAP_LONG_MS = 4_000L
+
+        const val ZAP_TEXT_CONNECT = "正在连接…"
+        const val ZAP_TEXT_SLOW = "线路较慢，正在缓冲…"
 
         /** 5s：低于这个量再出图，网一抖就卡 */
         const val MIN_BUFFER_MS = 5_000

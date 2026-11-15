@@ -13,8 +13,8 @@ android {
         minSdk = 21
         // 33 是兼顾老电视安装器的稳妥值，避免过高 targetSdk 被旧 PackageManager 拒解析
         targetSdk = 33
-        versionCode = 40
-        versionName = "2.12.0"
+        versionCode = 41
+        versionName = "2.13.0"
     }
 
     signingConfigs {

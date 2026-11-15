@@ -391,4 +391,53 @@
             android:textColor="@color/text_secondary"
             android:textSize="11sp" />
     </LinearLayout>
+
+    <!--
+      切台等待卡片。按下切台到新台出首帧之间，画面是上一台的静帧。
+      实测慢的台这一段是 4~8 秒，期间只有底部一个小转圈，用户很容易以为「按坏了」，
+      于是再按一次、又冷启动一路流，越按越慢。
+      这里把等待讲清楚：台名 + 进度 + 已等秒数，出首帧立刻收起。
+      不加载台标图——切台瞬间多一次解码和 IO 不划算，一行台名已经足够表明在切哪个台。
+    -->
+    <LinearLayout
+        android:id="@+id/zapPanel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/card_overlay"
+        android:gravity="center"
+        android:minWidth="200dp"
+        android:orientation="vertical"
+        android:paddingHorizontal="44dp"
+        android:paddingVertical="30dp"
+        android:visibility="gone"
+        tools:visibility="gone">
+
+        <TextView
+            android:id="@+id/zapName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text_primary"
+            android:textSize="26sp"
+            tools:text="湖南卫视" />
+
+        <TextView
+            android:id="@+id/zapStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            tools:text="线路较慢，正在缓冲…" />
+
+        <ProgressBar
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="120dp"
+            android:layout_height="4dp"
+            android:layout_marginTop="18dp"
+            android:indeterminate="true"
+            android:indeterminateTint="@color/text_tertiary" />
+    </LinearLayout>
 </FrameLayout>
