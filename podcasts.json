@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "updated": "2026-11-15",
+  "version": 2,
+  "updated": "2026-11-16",
   "note": "小黑TV 播客节目单。改完 push 到 main 分支，电视下次启动自动生效，不用发版。字段：id（小写字母/数字/下划线/短横线，会当缓存文件名用）、name、author、feed（RSS 地址，必须是 http/https）、desc；enabled 写 false 可以下线一档（内置的也能下线），缺省为 true。最多 40 档。",
   "shows": [
     {
@@ -113,6 +113,126 @@
       "author": "JJ Ying & Leon Gao",
       "feed": "https://anyway.fm/rss.xml",
       "desc": "两位设计师聊视觉设计",
+      "enabled": true
+    },
+    {
+      "id": "buheshiyi",
+      "name": "不合时宜",
+      "author": "不合时宜",
+      "feed": "https://feed.xyzfm.space/ww7cqnybekty",
+      "desc": "青年视角看世界，时事与文化对谈",
+      "enabled": true
+    },
+    {
+      "id": "guigu101",
+      "name": "硅谷101",
+      "author": "硅谷101",
+      "feed": "https://feeds.fireside.fm/sv101/rss",
+      "desc": "硅谷科技、创投与华人故事",
+      "enabled": true
+    },
+    {
+      "id": "zhangxiaojun",
+      "name": "张小珺商业访谈录",
+      "author": "张小珺",
+      "feed": "https://feed.xyzfm.space/dk4yh3pkpjp3",
+      "desc": "和商业关键人物深度对谈",
+      "enabled": true
+    },
+    {
+      "id": "wandian",
+      "name": "晚点聊",
+      "author": "晚点LatePost",
+      "feed": "https://feeds.fireside.fm/latetalk/rss",
+      "desc": "晚点团队对话创业者与投资人",
+      "enabled": true
+    },
+    {
+      "id": "zhangjing42",
+      "name": "42章经",
+      "author": "42章经",
+      "feed": "https://feed.xyzfm.space/evgg6xle9rdc",
+      "desc": "创业、投资与商业观察",
+      "enabled": true
+    },
+    {
+      "id": "kejizaozhidao",
+      "name": "科技早知道",
+      "author": "声动",
+      "feed": "https://feeds.fireside.fm/guiguzaozhidao/rss",
+      "desc": "全球科技资讯与趋势解读",
+      "enabled": true
+    },
+    {
+      "id": "kejiluandun",
+      "name": "科技乱炖",
+      "author": "科技乱炖",
+      "feed": "https://feeds.daopub.com/ld.xml",
+      "desc": "科技热点与业界八卦漫谈",
+      "enabled": true
+    },
+    {
+      "id": "luanfanshu",
+      "name": "乱翻书",
+      "author": "潘乱",
+      "feed": "https://feed.xyzfm.space/yxuruh3f9mc4",
+      "desc": "互联网与商业深度观察",
+      "enabled": true
+    },
+    {
+      "id": "zhixing",
+      "name": "知行小酒馆",
+      "author": "有知有行",
+      "feed": "https://feed.xyzfm.space/j8yp8gxkmgqr",
+      "desc": "投资、理财与生活思考",
+      "enabled": true
+    },
+    {
+      "id": "bannatie",
+      "name": "半拿铁",
+      "author": "半拿铁",
+      "feed": "https://proxy.wavpub.com/caffebreve.xml",
+      "desc": "商业沉浮与品牌故事",
+      "enabled": true
+    },
+    {
+      "id": "wuliaozhai",
+      "name": "无聊斋",
+      "author": "无聊斋",
+      "feed": "https://feed.xyzfm.space/njwyhpcjqn9t",
+      "desc": "喜剧演员的轻松闲聊",
+      "enabled": true
+    },
+    {
+      "id": "xxlth",
+      "name": "谐星聊天会",
+      "author": "谐星聊天会",
+      "feed": "https://feeds.danlirencomedy.com/xxlth.xml",
+      "desc": "单口喜剧演员群聊现场",
+      "enabled": true
+    },
+    {
+      "id": "naofangdianbo",
+      "name": "脑放电波",
+      "author": "脑放电波",
+      "feed": "https://feed.xyzfm.space/wupdmt9er7nb",
+      "desc": "科学、技术与现代社会话题",
+      "enabled": true
+    },
+    {
+      "id": "kanlixiang",
+      "name": "看理想圆桌",
+      "author": "看理想",
+      "feed": "https://api.vistopia.com.cn/rss/program/13.xml",
+      "desc": "人文知识分子的圆桌对谈",
+      "enabled": true
+    },
+    {
+      "id": "yanzhonghuashu",
+      "name": "岩中花述",
+      "author": "岩中花述",
+      "feed": "https://feed.xyzfm.space/hwen8wf69c6g",
+      "desc": "女性人物深度访谈",
       "enabled": true
     }
   ]

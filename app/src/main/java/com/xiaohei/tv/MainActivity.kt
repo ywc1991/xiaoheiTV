@@ -996,7 +996,17 @@ class MainActivity : Activity() {
         val ch = currentChannel ?: return
         // 只比台名：预播可能已经自己换过线路，拿旧的 urlIndex 去比会误判成「没命中」
         if (slot.channel?.name != ch.name || slot.failed) return
-        if (activeChannel?.name == ch.name) return // 已经切过去了，别重复换画面
+        // 同名时不能一律跳过。
+        //
+        // playDirectNow（直接起播）会在 prepare 前就把 activeChannel 设成目标台，
+        // 但那一刻主播放器还在缓冲慢线路、画面根本没出来（playStartedAt > 0）。
+        // 若此时预播槽先 READY，旧的「同名即已切过去」判断会把它拦掉，
+        // 用户只能干等慢线路，而手边明明有一份缓冲好的数据——实测这就是
+        // preWait 1000~1900ms 的主要来源。
+        //
+        // 唯一该跳过的情况是：主播放器里这个台已经真正 READY（正常切换已完成）。
+        // swap 完成后 slot.channel 会被清空，下一行就能拦住重复回调，不会来回换。
+        if (activeChannel?.name == ch.name && player?.playbackState == Player.STATE_READY) return
         syncUrlIndexFromPre(slot, ch)
         swapToPre(slot)
     }
@@ -1023,7 +1033,9 @@ class MainActivity : Activity() {
         val old = player ?: return
         if (!allowBuffering && np.playbackState != Player.STATE_READY) return
         val ch = slot.channel ?: return
-        if (activeChannel?.name == ch.name) return
+        // 同名时只在「主播放器已真正 READY」才跳过（正常切换已完成）。
+        // 直接起播还在缓冲慢线路时，预播槽抢先 READY 正是要接管的场景，不能拦。
+        if (activeChannel?.name == ch.name && old.playbackState == Player.STATE_READY) return
         Log.i(
             "XiaoHeiTV",
             if (allowBuffering) "swap 提前接管 ${ch.name}（仍在缓冲）"
@@ -1404,6 +1416,15 @@ class MainActivity : Activity() {
                 val slot = preSlots.firstOrNull { it.channel == null || it.failed } ?: preSlots.last()
                 startPrebuffer(slot, ch, url)
             }
+            // 等待新台缓冲的这 1~2 秒，另一个槽不能闲着。
+            //
+            // 原来流水线只在「swap 成功 / 主播放器 READY」后才排下一台，于是形成连锁：
+            // 一次没命中 → 等待期没预播 → 下次切台也没命中 → 又等 1.5s……
+            // 实测缓冲一条流要 1.6~2.4s，而用户 1.6s 就切一次台，等待期不提前干活就永远慢半拍。
+            //
+            // prebufferNext 内部会把「正在缓冲当前目标台」的那个槽保留（见 c.name == cur.name 分支），
+            // 所以这里调度只会让空槽去备下一台，不会把已经在缓冲的目标台停掉重来。
+            schedulePrebufferNext()
             runCatching { player?.playWhenReady = false }
             // 新台还在缓冲时画面是静帧，不给提示用户会以为按键没生效、又按一次
             showZapPending(ch)

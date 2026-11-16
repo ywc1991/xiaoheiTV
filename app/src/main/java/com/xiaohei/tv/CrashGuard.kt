@@ -133,6 +133,13 @@ object CrashGuard {
      * 手动 level=0 是「强制标准」，忽略设备画像；其余情况按档位收敛：
      * 保守档（Android 8.1 及以下 / ≤2.5GB / 硬解 ≤2 路，例如 TCL 75T6）最多 1 槽，
      * 这样同时最多 2 路解码，不再出现 3 个解码器抢实例的换台闪退。
+     *
+     * 标准档从 2 槽提到 3 槽（实测依据）：一条 HLS 流从零到 READY 要 3~4 秒，
+     * 而用户连按同向约 1.6 秒一台。2 槽只能装「下一台 + 回切台」，装不下「下下台」，
+     * 于是每次同向切换都慢半拍。3 槽正好覆盖 ZapPredict 的全部三个候选：
+     * 下一台、来时的台、下下台——回切和连续浏览都命中，且无需改预测顺序。
+     * 主流电视硬解 8~27 路、内存 ≥3GB，4 路解码（1 主 + 3 预播）远未触顶；
+     * 保守档仍锁 1 槽，老盒子不受影响。
      */
     fun slotCount(c: Context): Int {
         val m = manual(c)
@@ -140,10 +147,10 @@ object CrashGuard {
         val base = when {
             lv >= 2 -> 0
             lv >= 1 -> 1
-            else -> 2
+            else -> 3
         }
         if (base == 0) return 0
-        if (m == 0) return 2 // 用户在「关于」里主动恢复标准模式
+        if (m == 0) return 3 // 用户在「关于」里主动恢复标准模式
         return if (DeviceProfile.isConservative(c)) minOf(base, 1) else base
     }
 

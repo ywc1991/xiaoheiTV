@@ -21,6 +21,14 @@ class ZapPredictTest {
     }
 
     @Test
+    fun `三个槽时同时覆盖下一台 来时的台 下下台`() {
+        // 标准档 3 槽：连续同向切台的「下下台」和回切的「来时台」都要提前缓冲，
+        // 这样既保留回切秒切，又不会让连按同向时每次都慢半拍。
+        assertEquals(listOf(3, 1, 4), ZapPredict.targets(2, 8, 1, 3))
+        assertEquals(listOf(1, 3, 0), ZapPredict.targets(2, 8, -1, 3))
+    }
+
+    @Test
     fun `只有一个槽时只猜同方向下一台`() {
         assertEquals(listOf(3), ZapPredict.targets(2, 5, 1, 1))
         assertEquals(listOf(1), ZapPredict.targets(2, 5, -1, 1))
