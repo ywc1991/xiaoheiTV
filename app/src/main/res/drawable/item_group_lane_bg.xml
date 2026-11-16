@@ -1,27 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  分组行背景（tvOS 侧边栏）：
-    焦点   → 反转成白底，文字变黑，一眼定位
-    选中   → 白 8%，告诉你右栏正在显示哪个分组
+  分组行（tvOS 侧边栏 + 玻璃面板）：
+    焦点   → 反白成近白底（92%，留一点透，不至于像一块贴纸），文字转深色
+    选中   → 白 10%，告诉你右栏正在显示哪个分组
     其余   → 完全透明，只留文字
 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
+
     <item android:state_focused="true">
         <shape android:shape="rectangle">
-            <solid android:color="@color/row_focus_solid" />
-            <corners android:radius="13dp" />
+            <solid android:color="#EBFFFFFF" />
+            <corners android:radius="@dimen/row_radius" />
         </shape>
     </item>
+
     <item android:state_activated="true">
         <shape android:shape="rectangle">
-            <solid android:color="@color/row_selected" />
-            <corners android:radius="13dp" />
+            <solid android:color="#1AFFFFFF" />
+            <corners android:radius="@dimen/row_radius" />
         </shape>
     </item>
+
     <item>
         <shape android:shape="rectangle">
             <solid android:color="@android:color/transparent" />
-            <corners android:radius="13dp" />
+            <corners android:radius="@dimen/row_radius" />
         </shape>
     </item>
 </selector>

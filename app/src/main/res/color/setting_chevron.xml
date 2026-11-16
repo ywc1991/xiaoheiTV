@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置行的箭头：焦点时提亮，暗示「这一行可以进去」 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:color="@color/text_primary" />
+    <item android:color="@color/text_tertiary" />
+</selector>

@@ -7,6 +7,8 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.resource.bitmap.RoundedCorners
+import com.bumptech.glide.request.RequestOptions
 import com.xiaohei.tv.R
 import com.xiaohei.tv.data.EpgEntry
 import com.xiaohei.tv.data.EpgRepository
@@ -114,7 +116,15 @@ class ChannelAdapter(
             val src = LogoAssets.logoPath(logo.context, c.name) ?: c.logo
             if (src.isNotEmpty()) {
                 logo.visibility = View.VISIBLE
-                Glide.with(logo).load(src).into(logo)
+                val req = Glide.with(logo).load(src)
+                if (c.isPodcast) {
+                    // 播客封面是满色块的方图，直角会和圆角卡片打架；切 6dp 圆角，
+                    // 看起来才像一张「专辑卡」而不是贴上去的贴纸。台标是透明底，不用处理。
+                    val r = (logo.resources.displayMetrics.density * 6f).toInt()
+                    req.apply(RequestOptions.bitmapTransform(RoundedCorners(r))).into(logo)
+                } else {
+                    req.into(logo)
+                }
             } else {
                 logo.visibility = View.GONE
             }

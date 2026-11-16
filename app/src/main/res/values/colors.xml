@@ -11,6 +11,21 @@
     <color name="hairline">#1FFFFFFF</color>
     <color name="divider">#1FFFFFFF</color>
 
+    <!-- ===== 玻璃层（磨砂质感）：靠「半透明 + 高光 + 亮边」三层叠出来 ===== -->
+    <!-- 面板底色：上浅下深，模拟光从上方打下来。
+         色值对齐电视里「日历」面板的实测值：卡片内部 RGB≈(28,24,23)、背后壁纸≈(120,70,30)
+         → 底色近黑（#121316，去掉了原来那点冷蓝），不透明度约 86%。
+         这个档位下灰色小字（节目名、线路数）在亮画面上依然清晰。 -->
+    <color name="glass_top">#DB121316</color>
+    <color name="glass_bottom">#CC0B0B0D</color>
+    <!-- 玻璃边缘那条亮线：日历面板实测描边像素 (195,189,186)，约 60% 白。
+         1dp 就够，太粗会变成一圈框。 -->
+    <color name="glass_stroke">#99FFFFFF</color>
+    <!-- 顶部受光面的高光，向下淡出到全透明 -->
+    <color name="glass_sheen">#1FFFFFFF</color>
+    <!-- 卡片：给播放中/选中态用的一点白，很淡 -->
+    <color name="glass_fill">#14FFFFFF</color>
+
     <!-- ===== 文字：只有三档，够用且克制 ===== -->
     <color name="text_primary">#FFFFFFFF</color>
     <color name="text_secondary">#FF98989F</color>

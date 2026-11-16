@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  设置页背景：深灰渐变 + 两团极淡的光晕（左上偏蓝、右下偏暖）。
+
+  作用不是装饰，是给玻璃卡片一层「后面有东西」的暗示：
+  卡片叠在纯黑上只是一块灰方块，叠在带微光渐变上才有通透感。
+  不用真实图片资源：多一张 1080p 底图就多几 MB 安装包，两团径向渐变零成本。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:endColor="#FF06070A"
+                android:startColor="#FF12151B"
+                android:type="linear" />
+        </shape>
+    </item>
+
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:centerX="0.16"
+                android:centerY="0.04"
+                android:endColor="#002A4C82"
+                android:gradientRadius="760dp"
+                android:startColor="#3A2A4C82"
+                android:type="radial" />
+        </shape>
+    </item>
+
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:centerX="0.94"
+                android:centerY="0.96"
+                android:endColor="#002E2214"
+                android:gradientRadius="680dp"
+                android:startColor="#332E2214"
+                android:type="radial" />
+        </shape>
+    </item>
+</layer-list>

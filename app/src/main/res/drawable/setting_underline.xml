@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  焦点下划线：设置行获得焦点时，只在行底边亮一条 3dp 的线。
+
+  为什么单独做成一个 View、而不是拿行背景画：layer-list 的 item 上
+  `android:height` / `android:gravity` 是 API 23 才有的属性，21/22 上会被忽略，
+  线就会铺满整行变成一块白砖。用一个真实 View 定高贴底，所有版本表现一致。
+
+  两端渐变淡出，避免在行内边距处戳出两个硬断点。
+  状态由父行 duplicateParentState 传下来，这个 View 自己不可聚焦。
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="0"
+                android:centerColor="#FFFFFFFF"
+                android:endColor="#00FFFFFF"
+                android:startColor="#00FFFFFF"
+                android:type="linear" />
+        </shape>
+    </item>
+
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+</selector>

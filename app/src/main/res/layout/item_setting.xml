@@ -1,34 +1,74 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  设置页一行：左「标题 + 说明」，右一个淡淡的箭头。
+  行本身平时透明（玻璃卡片就是它的底）。
+
+  焦点指示只有底边那条下划线（见 setting_underline.xml）：
+  不再叠白底、不再画描边——设置页是**一整张**玻璃卡片，
+  行里再糊一块白会把卡片切成好几段，反而看不出卡片的形状。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginVertical="2dp"
-    android:background="@drawable/item_channel_bg"
+    android:layout_marginVertical="3dp"
     android:focusable="true"
     android:focusableInTouchMode="true"
-    android:gravity="center_vertical"
-    android:minHeight="68dp"
-    android:orientation="vertical"
     android:paddingHorizontal="20dp"
-    android:paddingVertical="14dp"
+    android:paddingVertical="16dp"
     android:stateListAnimator="@animator/item_scale">
 
-    <TextView
-        android:id="@+id/settingTitle"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:fontFamily="sans-serif-medium"
-        android:textColor="@color/text_primary"
-        android:textSize="16sp"
-        tools:text="播放源：小黑推荐源" />
+        android:gravity="center_vertical"
+        android:minHeight="78dp"
+        android:orientation="horizontal">
 
-    <TextView
-        android:id="@+id/settingDesc"
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/settingTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:maxLines="1"
+                android:textColor="@color/text_primary"
+                android:textSize="17sp"
+                tools:text="检查更新 · 当前 v2.13.1" />
+
+            <TextView
+                android:id="@+id/settingDesc"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:textColor="@color/text_tertiary"
+                android:textSize="12sp"
+                tools:text="从 GitHub 检查最新版本，发现新版本可直接下载并安装" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="14dp"
+            android:duplicateParentState="true"
+            android:text="›"
+            android:textColor="@color/setting_chevron"
+            android:textSize="22sp" />
+    </LinearLayout>
+
+    <!-- 焦点下划线：贴行底边，宽度跟着行的内边距，和文字左边缘对齐 -->
+    <View
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="3dp"
-        android:textColor="@color/text_tertiary"
-        android:textSize="12sp"
-        tools:text="内置 353 个频道" />
-</LinearLayout>
+        android:layout_height="3dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/setting_underline"
+        android:duplicateParentState="true" />
+</FrameLayout>

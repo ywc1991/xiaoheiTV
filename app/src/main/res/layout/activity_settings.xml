@@ -1,36 +1,85 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  设置页（新玻璃样式）。
+
+  版式照参考图的三段式：大标题 → 一块玻璃卡片 → 底部提示。
+  卡片本身就是列表容器，行与行之间不再各占一个色块——参考图里信息是被「装进」卡片里的，
+  而不是一行行贴纸。只有焦点那一行才浮起一点白和一圈亮边。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg_main"
-    android:orientation="vertical"
-    android:paddingStart="48dp"
-    android:paddingTop="44dp"
-    android:paddingEnd="48dp"
-    android:paddingBottom="24dp">
+    android:background="@drawable/settings_bg">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:fontFamily="sans-serif-medium"
-        android:text="@string/settings"
-        android:textColor="@color/text_primary"
-        android:textSize="32sp" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:text="版本更新 · 关于"
-        android:textColor="@color/text_tertiary"
-        android:textSize="12sp" />
-
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/settingsList"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_marginTop="24dp"
-        android:clipChildren="false"
-        android:clipToPadding="false"
-        android:paddingBottom="24dp" />
-</LinearLayout>
+        android:orientation="vertical"
+        android:paddingStart="56dp"
+        android:paddingTop="46dp"
+        android:paddingEnd="56dp"
+        android:paddingBottom="26dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.01"
+            android:text="@string/settings"
+            android:textColor="@color/text_primary"
+            android:textSize="34sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:letterSpacing="0.02"
+            android:text="版本更新 · 关于"
+            android:textColor="@color/text_tertiary"
+            android:textSize="13sp" />
+
+        <!-- 玻璃卡片：整个列表都在这一块里 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:background="@drawable/glass_card"
+            android:orientation="vertical"
+            android:paddingHorizontal="10dp"
+            android:paddingTop="16dp"
+            android:paddingBottom="10dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="14dp"
+                android:layout_marginBottom="8dp"
+                android:letterSpacing="0.08"
+                android:text="应用"
+                android:textColor="@color/text_tertiary"
+                android:textSize="12sp" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/settingsList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:paddingBottom="6dp" />
+        </LinearLayout>
+
+        <!-- 占掉剩余高度，把提示压到屏幕底部 -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:letterSpacing="0.02"
+            android:text="↑↓ 选择　OK 确认　← 返回"
+            android:textColor="@color/text_tertiary"
+            android:textSize="11sp" />
+    </LinearLayout>
+</FrameLayout>

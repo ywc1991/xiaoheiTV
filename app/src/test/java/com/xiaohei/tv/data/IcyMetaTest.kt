@@ -124,4 +124,26 @@ class IcyMetaTest {
         assertTrue(out.copyOf(n).contentEquals(audio))
         assertNull(stripper.takeTitle())
     }
+
+    @Test
+    fun `空标题不会被当成曲目显示成引号分号`() {
+        // 蜻蜓那批台真实返回的就是 StreamTitle='';（引号中间什么都没有）。
+        // 早先这里会解析出 "';\u0000"，界面上显示「曲目: ';」。
+        val block = "StreamTitle='';\u0000\u0000".toByteArray(Charsets.UTF_8)
+        assertNull(IcyMeta.parseTitle(block, block.size))
+    }
+
+    @Test
+    fun `只有标点的标题一律视为没有`() {
+        listOf("StreamTitle='- - -';", "StreamTitle='...';", "StreamTitle=\"';\";").forEach { s ->
+            val b = (s + "\u0000").toByteArray(Charsets.UTF_8)
+            assertNull("$s 不应被当成曲目", IcyMeta.parseTitle(b, b.size))
+        }
+    }
+
+    @Test
+    fun `正常标题仍然照常解析`() {
+        val b = "StreamTitle='王泓昊 - 不想说清楚';\u0000".toByteArray(Charsets.UTF_8)
+        assertEquals("王泓昊 - 不想说清楚", IcyMeta.parseTitle(b, b.size))
+    }
 }

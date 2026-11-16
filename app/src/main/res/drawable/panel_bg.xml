@@ -1,17 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  浮层面板：约 84% 不透明的深色，让底下的画面隐约透出一点氛围，
-  但不会把人脸/字幕等细节透成干扰；再配一圈发丝边与圆角立起体积感。
+  频道列表浮层：一整块磨砂玻璃。
+
+  为什么不是真的高斯模糊：底下的视频由 PlayerView（SurfaceView）独占一个图层，
+  上层 View 读不到它的像素。要做真模糊只能把视频改成 TextureView 再把每帧拷出来降采样，
+  那是「每帧多一次 GPU 往返」的代价，和「不影响播放」这条硬约束直接冲突。
+  所以这里用三件事伪造玻璃感，代价是一次静态绘制：
+    1. 半透明底色（视频在背后隐约透出 → 这是「透」）
+    2. 顶部一道白 12% 向下淡出的高光（玻璃的受光面）
+    3. 1dp 亮边（玻璃厚度在光下的那条线）
+
+  色值不是拍脑袋定的：直接对齐电视里「日历」面板的实测像素——
+  卡片内部近黑中性色、约 86% 不透明、描边约 60% 白。三个玻璃面（频道面板、
+  设置页卡片、设置行）共用 @color/glass_stroke 与同一档底色，看起来才是同一块材料。
 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <gradient
-        android:angle="270"
-        android:endColor="#D2101114"
-        android:startColor="#DC1A1B1F"
-        android:type="linear" />
-    <corners android:radius="@dimen/panel_radius" />
-    <stroke
-        android:width="1dp"
-        android:color="@color/hairline" />
-</shape>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:endColor="@color/glass_bottom"
+                android:startColor="@color/glass_top"
+                android:type="linear" />
+            <corners android:radius="@dimen/panel_radius" />
+            <stroke
+                android:width="1dp"
+                android:color="@color/glass_stroke" />
+        </shape>
+    </item>
+
+    <!-- 顶部高光：只铺最上面 160dp，向下淡到全透明，所以它的下圆角看不出来 -->
+    <item
+        android:height="160dp"
+        android:gravity="top">
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:endColor="#00FFFFFF"
+                android:startColor="@color/glass_sheen"
+                android:type="linear" />
+            <corners android:radius="@dimen/panel_radius" />
+        </shape>
+    </item>
+</layer-list>

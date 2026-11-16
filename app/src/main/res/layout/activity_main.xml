@@ -117,6 +117,20 @@
         </LinearLayout>
     </FrameLayout>
 
+    <!--
+      列表展开时给画面压一层很淡的暗。
+      玻璃要「浮」在画面上才好看，但电视画面常常是纯白背景或红色大字广告，
+      底下太亮会把面板里的灰色小字（节目名、线路数）直接压没。
+      30% 的暗只压亮度不压色彩，玻璃的通透感还在，读起来却清楚得多。
+    -->
+    <View
+        android:id="@+id/listScrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#4D000000"
+        android:importantForAccessibility="no"
+        android:visibility="gone" />
+
     <!-- 顶部信息：黑→透明的渐变，内容贴上沿，和画面自然融合 -->
     <LinearLayout
         android:id="@+id/infoBar"
@@ -141,6 +155,19 @@
             tools:text="CCTV-1" />
 
         <TextView
+            android:id="@+id/infoProgram"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:visibility="gone"
+            tools:text="正在播 新闻联播　·　接下来 焦点访谈"
+            tools:visibility="visible" />
+
+        <TextView
             android:id="@+id/infoMeta"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -148,19 +175,6 @@
             android:textColor="@color/text_secondary"
             android:textSize="12sp"
             tools:text="央视 · 线路 1/5" />
-
-        <TextView
-            android:id="@+id/infoProgram"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:visibility="gone"
-            tools:text="正在播：新闻联播　接下来：焦点访谈"
-            tools:visibility="visible" />
     </LinearLayout>
 
     <!-- 播放失败提示 -->
@@ -202,11 +216,14 @@
             android:orientation="horizontal">
 
             <!-- ============ 左栏：分组 ============ -->
+            <!-- 两栏不再写死 dp：面板宽度由代码按「屏宽 1/3」算出，
+                 栏宽用 weight 分摊，换台电视/换分辨率比例也不变。 -->
             <LinearLayout
-                android:layout_width="@dimen/group_lane_width"
+                android:layout_width="0dp"
+                android:layout_weight="36"
                 android:layout_height="match_parent"
                 android:orientation="vertical"
-                android:paddingHorizontal="10dp">
+                android:paddingHorizontal="8dp">
 
                 <TextView
                     android:layout_width="match_parent"
@@ -240,7 +257,8 @@
 
             <!-- ============ 右栏：当前分组的频道 ============ -->
             <LinearLayout
-                android:layout_width="@dimen/channel_lane_width"
+                android:layout_width="0dp"
+                android:layout_weight="64"
                 android:layout_height="match_parent"
                 android:orientation="vertical">
 
@@ -295,7 +313,7 @@
             android:paddingTop="10dp"
             android:paddingEnd="16dp"
             android:paddingBottom="14dp"
-            android:text="↑↓ 选择　OK 播放　← 返回　长按收藏"
+            android:text="↑↓ 选择　OK 播放　← 返回&#10;长按 OK 收藏　菜单 设置"
             android:textColor="@color/text_secondary"
             android:textSize="11sp" />
     </LinearLayout>
@@ -390,54 +408,5 @@
             android:text="↑↓ 选择　OK 播放　← 返回"
             android:textColor="@color/text_secondary"
             android:textSize="11sp" />
-    </LinearLayout>
-
-    <!--
-      切台等待卡片。按下切台到新台出首帧之间，画面是上一台的静帧。
-      实测慢的台这一段是 4~8 秒，期间只有底部一个小转圈，用户很容易以为「按坏了」，
-      于是再按一次、又冷启动一路流，越按越慢。
-      这里把等待讲清楚：台名 + 进度 + 已等秒数，出首帧立刻收起。
-      不加载台标图——切台瞬间多一次解码和 IO 不划算，一行台名已经足够表明在切哪个台。
-    -->
-    <LinearLayout
-        android:id="@+id/zapPanel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:background="@drawable/card_overlay"
-        android:gravity="center"
-        android:minWidth="200dp"
-        android:orientation="vertical"
-        android:paddingHorizontal="44dp"
-        android:paddingVertical="30dp"
-        android:visibility="gone"
-        tools:visibility="gone">
-
-        <TextView
-            android:id="@+id/zapName"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="@color/text_primary"
-            android:textSize="26sp"
-            tools:text="湖南卫视" />
-
-        <TextView
-            android:id="@+id/zapStatus"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            tools:text="线路较慢，正在缓冲…" />
-
-        <ProgressBar
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="120dp"
-            android:layout_height="4dp"
-            android:layout_marginTop="18dp"
-            android:indeterminate="true"
-            android:indeterminateTint="@color/text_tertiary" />
     </LinearLayout>
 </FrameLayout>

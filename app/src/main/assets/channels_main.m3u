@@ -223,7 +223,6 @@ https://5ddce30eb4b55.streamlock.net/bltvhd/bltv1/playlist.m3u8
 http://61.216.67.119:1935/bltvhd/bltv1/playlist.m3u8
 #EXTINF:-1 group-title="广播",中国之声
 https://ngcdn001.cnr.cn/live/zgzs/index.m3u8
-http://ngcdn002.cnr.cn/live/zgzs/index.m3u8
 https://lhttp.qtfm.cn/live/15318317/64k.mp3
 #EXTINF:-1 group-title="广播",经济之声
 http://ngcdn002.cnr.cn/live/jjzs/index.m3u8
@@ -235,52 +234,9 @@ http://sk.cri.cn/905.m3u8
 http://sk.cri.cn/hyhq.m3u8
 #EXTINF:-1 group-title="广播",南海之声
 http://sk.cri.cn/nhzs.m3u8
-#EXTINF:-1 group-title="广播",北京新闻广播
-https://ls.qingting.fm/live/339/64k.m3u8
-https://lhttp.qtfm.cn/live/339/64k.mp3
-#EXTINF:-1 group-title="广播",上海动感101
-https://ls.qingting.fm/live/274/64k.m3u8
-https://lhttp.qingting.fm/live/274/64k.mp3
-#EXTINF:-1 group-title="广播",第一财经广播
-https://ls.qingting.fm/live/276/64k.m3u8
-http://lhttp.qingting.fm/live/276/64k.mp3
-#EXTINF:-1 group-title="广播",上海经典音乐广播
-https://ls.qingting.fm/live/267/64k.m3u8
-https://lhttp.qingting.fm/live/267/64k.mp3
-#EXTINF:-1 group-title="广播",广东音乐之声
-https://ls.qingting.fm/live/1260/64k.m3u8
-https://lhttp.qtfm.cn/live/1260/64k.mp3
-#EXTINF:-1 group-title="广播",广东珠江经济台
-https://ls.qingting.fm/live/1259/64k.m3u8
-https://lhttp.qtfm.cn/live/1259/64k.mp3
-#EXTINF:-1 group-title="广播",江苏经典流行音乐广播
-https://ls.qingting.fm/live/4938/64k.m3u8
-https://lhttp.qtfm.cn/live/4938/64k.mp3
 #EXTINF:-1 group-title="广播",AsiaFM亚洲音乐台
-https://ls.qingting.fm/live/4581/64k.m3u8
+https://lhttp.qtfm.cn/live/4581/64k.mp3
 https://lhttp.qingting.fm/live/4581/64k.mp3
-#EXTINF:-1 group-title="广播",北京音乐广播
-https://brtv-radiolive.rbc.cn/alive/fm974.m3u8
-#EXTINF:-1 group-title="广播",浙江音乐调频
-http://ali-m-l.cztv.com/channels/lantian/fm968/128k.m3u8
-#EXTINF:-1 group-title="广播",河南音乐广播
-https://stream.hndt.com/live/yinyue/playlist.m3u8
-#EXTINF:-1 group-title="广播",上海经典金曲
-https://ls.qingting.fm/live/273/64k.m3u8
-https://lhttp-hw.qtfm.cn/live/273/64k.mp3
-#EXTINF:-1 group-title="广播",四川音乐广播
-https://ls.qingting.fm/live/1110/64k.m3u8
-https://lhttp.qtfm.cn/live/1110/64k.mp3
-#EXTINF:-1 group-title="广播",湖南音乐之声
-https://ls.qingting.fm/live/4979/64k.m3u8
-https://lhttp-hw.qtfm.cn/live/4979/64k.mp3
-#EXTINF:-1 group-title="广播",重庆音乐广播
-https://ls.qingting.fm/live/647/64k.m3u8
-https://lhttp.qtfm.cn/live/647/64k.mp3
-#EXTINF:-1 group-title="广播",陕西音乐广播
-https://ls.qingting.fm/live/4873/64k.m3u8
-https://lhttp.qtfm.cn/live/4873/64k.mp3
-http://radio.snrtv.com/audio/music/index.m3u8
 #EXTINF:-1 group-title="广播",891音乐台
 https://live.fm891.net/192k.aac
-https://live.fm891.net/96k.aac
+https://lhttp.qtfm.cn/live/20500215/64k.mp3

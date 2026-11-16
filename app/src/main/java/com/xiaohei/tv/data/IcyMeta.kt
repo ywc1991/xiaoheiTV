@@ -37,6 +37,9 @@ object IcyMeta {
         if (at < 0) return null
         val from = at + KEY.length
         val to = text.indexOf("';", from)
+        // 蜻蜓那一批台发的是 StreamTitle=''; —— 引号中间什么都没有。
+        // 早先这里会取到收尾的 "'" 和 ";"，界面上就显示成「曲目: ';」。
+        if (to == from) return null
         val raw = if (to > from) text.substring(from, to) else text.substring(from)
         return clean(raw)
     }
@@ -73,7 +76,8 @@ object IcyMeta {
         if (out.length < 2) return null
         val low = out.lowercase()
         if (low == "(null)" || low == "null" || low == "unknown" || low == "n/a") return null
-        if (out.all { it == '-' || it == '.' || it == '?' }) return null
+        // 只剩标点（"';"、"- - -"、"...") 等于没写，别把它当成节目名显示出来
+        if (out.none { it.isLetterOrDigit() }) return null
         return if (out.length > MAX_TITLE) out.substring(0, MAX_TITLE) else out
     }
 }

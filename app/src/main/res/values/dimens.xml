@@ -1,17 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <dimen name="list_width">180dp</dimen>
-    <!-- 左栏：分组（tvOS 侧边栏，只放文字，不需要太宽） -->
-    <dimen name="group_lane_width">140dp</dimen>
-    <!-- 右栏：该分组下的频道 -->
-    <dimen name="channel_lane_width">250dp</dimen>
+    <!-- 列表宽度不再用 dp 写死：面板宽 = 屏宽 / 3（MainActivity 里算），
+         两栏按 weight 36:64 分摊，见 activity_main.xml。 -->
     <!-- 浮层面板与屏幕边缘的距离 -->
-    <dimen name="panel_margin">20dp</dimen>
-    <dimen name="panel_radius">26dp</dimen>
+    <dimen name="panel_margin">22dp</dimen>
+    <dimen name="panel_radius">30dp</dimen>
+    <!-- 卡片圆角：参考图里所有卡片都比面板更「圆」，层级越小圆角越大 -->
+    <dimen name="card_radius">18dp</dimen>
+    <dimen name="row_radius">14dp</dimen>
+    <!-- 设置页那一整块玻璃卡片的圆角 -->
+    <dimen name="sheet_radius">28dp</dimen>
 
     <dimen name="item_height">58dp</dimen>
     <dimen name="group_height">46dp</dimen>
-    <dimen name="logo_size">40dp</dimen>
+    <!-- 台标槽：行高 58dp 下留 7dp 呼吸位。40dp 时港澳台那批台标实际只有 24dp 高，
+         远看几乎认不出，放到 44dp 能明显好一档而不挤行高 -->
+    <dimen name="logo_size">44dp</dimen>
     <dimen name="text_channel">15sp</dimen>
     <dimen name="text_group">15sp</dimen>
     <dimen name="text_meta">11sp</dimen>
