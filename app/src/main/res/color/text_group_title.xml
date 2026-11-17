@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 分组名：焦点时整行反白，文字转深色 -->
+<!-- 分组名：焦点样式与右侧频道卡片一致——底是淡玻璃，文字保持纯白 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:color="@color/on_focus_solid" android:state_focused="true" />
     <item android:color="@color/text_primary" />
 </selector>

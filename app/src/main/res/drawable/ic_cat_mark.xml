@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  标题徽标（真·抠图版，黑色猫）：
+  从启动图标里把整只猫抠出来——去掉白色圆角底板，猫保持原来的黑色（#0F1318），
+  外圈加一道极细的白描边，保证在黑玻璃面板上依然看得清轮廓。
+  电视屏幕保持白色，里面是黑笑嘴 + 红鼻，和启动图标一致。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="1.12"
+        android:scaleY="1.12"
+        android:translateX="-10.4"
+        android:translateY="0.7">
+
+        <!-- ===== 第一层：白色描边光晕（只在外轮廓露头发亮，深色背景下才看得见） ===== -->
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="5"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M81,71 Q95,73 92,57" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="5"
+            android:strokeLineJoin="round"
+            android:pathData="M20,33 L38,33 L24,17 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="5"
+            android:strokeLineJoin="round"
+            android:pathData="M84,33 L66,33 L80,17 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="5"
+            android:strokeLineJoin="round"
+            android:pathData="M27,31 H77 A7,7 0 0 1 84,38 V66 A7,7 0 0 1 77,73 H27 A7,7 0 0 1 20,66 V38 A7,7 0 0 1 27,31 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="5"
+            android:strokeLineJoin="round"
+            android:pathData="M29.4,71 H39.6 A3.4,3.4 0 0 1 43,74.4 V74.8 A3.4,3.4 0 0 1 39.6,78.2 H29.4 A3.4,3.4 0 0 1 26,74.8 V74.4 A3.4,3.4 0 0 1 29.4,71 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="5"
+            android:strokeLineJoin="round"
+            android:pathData="M64.4,71 H74.6 A3.4,3.4 0 0 1 78,74.4 V74.8 A3.4,3.4 0 0 1 74.6,78.2 H64.4 A3.4,3.4 0 0 1 61,74.8 V74.4 A3.4,3.4 0 0 1 64.4,71 Z" />
+
+        <!-- ===== 第二层：黑色本体（盖住光晕内侧，恢复启动图标里那只黑猫） ===== -->
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#0F1318"
+            android:strokeWidth="3.2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M81,71 Q95,73 92,57" />
+        <path
+            android:fillColor="#0F1318"
+            android:pathData="M20,33 L38,33 L24,17 Z" />
+        <path
+            android:fillColor="#0F1318"
+            android:pathData="M84,33 L66,33 L80,17 Z" />
+        <path
+            android:fillColor="#0F1318"
+            android:pathData="M27,31 H77 A7,7 0 0 1 84,38 V66 A7,7 0 0 1 77,73 H27 A7,7 0 0 1 20,66 V38 A7,7 0 0 1 27,31 Z" />
+        <path
+            android:fillColor="#0F1318"
+            android:pathData="M29.4,71 H39.6 A3.4,3.4 0 0 1 43,74.4 V74.8 A3.4,3.4 0 0 1 39.6,78.2 H29.4 A3.4,3.4 0 0 1 26,74.8 V74.4 A3.4,3.4 0 0 1 29.4,71 Z" />
+        <path
+            android:fillColor="#0F1318"
+            android:pathData="M64.4,71 H74.6 A3.4,3.4 0 0 1 78,74.4 V74.8 A3.4,3.4 0 0 1 74.6,78.2 H64.4 A3.4,3.4 0 0 1 61,74.8 V74.4 A3.4,3.4 0 0 1 64.4,71 Z" />
+
+        <!-- ===== 第三层：白屏 + 五官 ===== -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M30,37 H74 A4,4 0 0 1 78,41 V63 A4,4 0 0 1 74,67 H30 A4,4 0 0 1 26,63 V41 A4,4 0 0 1 30,37 Z" />
+        <path
+            android:fillColor="#E5534B"
+            android:pathData="M51.8,50.2 H52.2 A1.5,1.5 0 0 1 53.7,51.7 V55.3 A1.5,1.5 0 0 1 52.2,56.8 H51.8 A1.5,1.5 0 0 1 50.3,55.3 V51.7 A1.5,1.5 0 0 1 51.8,50.2 Z" />
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#0F1318"
+            android:strokeWidth="2.6"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M44.6,50.6 Q48.8,56.2 52,51.4 Q55.2,56.2 59.4,50.6" />
+    </group>
+</vector>

@@ -37,6 +37,7 @@ import com.xiaohei.tv.data.AudiobookCatalog
 import com.xiaohei.tv.data.ChannelGroups
 import com.xiaohei.tv.data.EpgEntry
 import com.xiaohei.tv.data.EpgRepository
+import com.xiaohei.tv.data.LineOrder
 import com.xiaohei.tv.data.PodcastCatalog
 import com.xiaohei.tv.data.PodcastDirStore
 import com.xiaohei.tv.data.PodcastStore
@@ -92,7 +93,6 @@ class MainActivity : Activity() {
     private lateinit var listPanel: LinearLayout
     /** 列表面板下面那层压暗：玻璃浮起来需要背景够沉 */
     private lateinit var listScrim: View
-    private lateinit var laneTitle: TextView
     /** 底部操作提示：不同分组下 OK 的含义不一样（播放 / 看分集 / 开书架） */
     private lateinit var laneHint: TextView
     private lateinit var playerView: androidx.media3.ui.PlayerView
@@ -218,7 +218,9 @@ class MainActivity : Activity() {
         var channel: Channel? = null,
         var url: String? = null,
         var failed: Boolean = false,
-        var tries: Int = 0
+        var tries: Int = 0,
+        /** true＝这是「当前台卡住时临时拉的备用线」，别被流水线当成多余槽停掉 */
+        var rescue: Boolean = false
     )
 
     /** 两个槽轮换；主播放器永远不在列表里，swap 时和某个槽互换 */
@@ -256,12 +258,48 @@ class MainActivity : Activity() {
     private fun rememberGoodLine(name: String, url: String) {
         goodLine[name] = url
         store.setGoodLine(name, url)
+        // 同一条线不可能既好又慢：好线一旦被认可，就把慢线记录撤掉
+        if (slowLine[name] == url) {
+            slowLine.remove(name)
+            store.clearSlowLine(name)
+        }
     }
 
     private fun forgetGoodLine(name: String) {
         goodLine.remove(name)
         store.clearGoodLine(name)
     }
+
+    // ---------------------------------------------------------------- 卡顿自愈
+    // 免费源里最常见的一种坏线不是「连不上」，而是「能出图，但每隔几十秒卡一下」。
+    // 这种线永远不会触发 onPlayerError，老逻辑只会一路卡下去，用户只能手动换台。
+    // 所以这里自己数卡顿：短时间内反复缓冲、或单次卡得太久，就静默换下一条线。
+
+    /** 能出图但会卡的线路，起播时排到最后 */
+    private val slowLine = HashMap<String, String>()
+
+    private fun slowUrlFor(name: String): String? = slowLine[name] ?: store.slowLine(name)
+
+    private fun rememberSlowLine(name: String, url: String) {
+        slowLine[name] = url
+        store.setSlowLine(name, url)
+    }
+
+    /** 已正常出图过一次：此后进入 BUFFERING 才算「卡顿」，起播那一次不算 */
+    private var lastReadyAt = 0L
+
+    /** 本次卡顿开始的时刻，0 表示当前不在卡顿中 */
+    private var bufferingSince = 0L
+
+    /** 一个统计窗口内累计卡了几次 */
+    private var rebufferCount = 0
+    private var rebufferWindowAt = 0L
+
+    /** 上次静默换线的时刻，用于冷却，避免两条烂线之间来回弹 */
+    private var quietSwitchAt = 0L
+
+    /** 本次起播已经静默换过几次线，超过线路总数就认命，不再来回折腾 */
+    private var quietSwitches = 0
 
     /** 用户按下切台键的时刻，用来量「从按键到画面真正变成新台」的端到端耗时 */
     private var zapStartedAt = 0L
@@ -284,11 +322,20 @@ class MainActivity : Activity() {
     /** 最近一次把焦点移到右栏第几项，用于取消尚未执行完的焦点任务 */
     private var focusChannelTask: Runnable? = null
 
+    /** 左栏分组焦点任务：连按时取消上一次未执行的，避免焦点滞后/跳错 */
+    private var groupFocusTask: Runnable? = null
+
     /** 长按 OK 已触发（用于区分短按与长按） */
     private var longPressFired = false
 
     /** OK 按下的时刻，用于在抬起时比较按住时长 */
     private var okDownTime = 0L
+
+    /** 最外层双击返回退出的判定窗口：两次按下间隔小于它才算双击 */
+    private val exitDoubleTapMs = 2_000L
+
+    /** 最外层第一次按下返回键的时刻（0＝当前窗口内还没按过） */
+    private var lastBackExitAt = 0L
 
     /** 判定为长按的按住时长阈值（毫秒） */
     private val longPressThreshold = 400L
@@ -345,7 +392,6 @@ class MainActivity : Activity() {
         }
         groupList = findViewById(R.id.groupList)
         channelList = findViewById(R.id.channelList)
-        laneTitle = findViewById(R.id.laneTitle)
         laneHint = findViewById(R.id.laneHint)
         playerView = findViewById(R.id.playerView)
         infoBar = findViewById(R.id.infoBar)
@@ -427,6 +473,11 @@ class MainActivity : Activity() {
         groupList.adapter = groupAdapter
         channelList.layoutManager = LinearLayoutManager(this)
         channelList.adapter = channelAdapter
+        // 关掉 RecyclerView 默认的 change 动画：切分组/切台时反白本该瞬时跟随，
+        // 默认的淡入淡出约 250ms，快速连按遥控器时会叠加成明显的迟滞感。
+        // 书架网格早就这么做了，两个主列表保持一致。
+        groupList.itemAnimator = null
+        channelList.itemAnimator = null
         groupList.requestFocus()
 
         player = newPlayer().also {
@@ -489,7 +540,6 @@ class MainActivity : Activity() {
         groupAdapter.setSelected(groupIndex)
         channelAdapter.submit(bucket.channels, store.favorites)
         pendingChannelPos = -1
-        laneTitle.text = "${bucket.name} · ${bucket.channels.size}"
         laneHint.text = when (bucket.name) {
             ChannelGroups.AUDIOBOOK -> "OK 打开书架　→ 浏览列表　← 返回"
             ChannelGroups.PODCAST -> "OK 打开书架　↑↓ 直接选档　← 返回\n长按 OK 收藏　菜单 设置"
@@ -498,7 +548,10 @@ class MainActivity : Activity() {
         // 若当前播放台属于该组，滚到它
         val pos = channelAdapter.positionOf(currentChannel?.name ?: "")
         if (pos >= 0) channelList.scrollToPosition(pos)
-        scheduleWarmUp()
+        // 焦点还在左栏时不要预热：用户此刻只是在 央视/卫视 之间翻分组，
+        // 预热会把一条用不上的流拉起来，和正在播的台抢带宽，正是「一切分组就卡」的来源。
+        // 按 → 进入右栏时 enterChannels() 会重新排预热。
+        if (!focusInGroups) scheduleWarmUp()
     }
 
     /** 焦点进入右栏（「向右展开」） */
@@ -524,12 +577,18 @@ class MainActivity : Activity() {
     }
 
     private fun focusGroupAt(index: Int) {
+        groupFocusTask?.let { handler.removeCallbacks(it) }
         groupList.scrollToPosition(index)
-        // 统一挂在主线程 Handler 上：onDestroy 的 removeCallbacksAndMessages 才能一并撤掉，
-        // 否则 Activity 销毁后 View 自己的延时任务还会回来找已经无效的 ViewHolder。
-        handler.postDelayed({
+        // 先立刻抢焦点：绝大多数时候目标就在屏内、ViewHolder 已存在，
+        // 删掉原来固定的 30ms 等待，连按分组时反白/右栏跟随才是即时的。
+        if (groupList.findViewHolderForAdapterPosition(index)?.itemView?.requestFocus() == true) return
+        // 只有刚 scrollToPosition、目标尚未布局时才退一帧兜底；
+        // 统一挂在主线程 Handler 上，onDestroy 才能随 removeCallbacksAndMessages 一并撤掉。
+        val task = Runnable {
             if (!destroyed) groupList.findViewHolderForAdapterPosition(index)?.itemView?.requestFocus()
-        }, 30)
+        }
+        groupFocusTask = task
+        handler.postDelayed(task, 16)
     }
 
     private fun focusChannelAt(index: Int) {
@@ -544,6 +603,9 @@ class MainActivity : Activity() {
                 lm.scrollToPositionWithOffset(index, channelList.height / 3)
             }
         }
+        // 目标已在屏内就直接给焦点，省掉固定 30ms；滚动后尚未布局时才退一帧兜底。
+        // 这里必须按 position 精确取 ViewHolder，不能用 getChildAt(0) 抢错项。
+        if (channelList.findViewHolderForAdapterPosition(index)?.itemView?.requestFocus() == true) return
         val task = Runnable {
             if (destroyed) return@Runnable
             val vh = channelList.findViewHolderForAdapterPosition(index)
@@ -551,7 +613,7 @@ class MainActivity : Activity() {
             target?.requestFocus()
         }
         focusChannelTask = task
-        handler.postDelayed(task, 30)
+        handler.postDelayed(task, 16)
     }
 
     private fun focusedChannel(): Channel? {
@@ -631,11 +693,16 @@ class MainActivity : Activity() {
         startPrebuffer(slot, ch, url)
     }
 
-    /** 首选线路：上次真正出过图的那条优先，其次才是源里的第一条非 IPv6 线路 */
-    private fun primaryUrl(ch: Channel): String? =
-        goodUrlFor(ch.name)?.takeIf { ch.urls.contains(it) }
-            ?: ch.urls.firstOrNull { !it.contains("://[") }
-            ?: ch.urls.firstOrNull()
+    /**
+     * 首选线路：上次真正出过图的那条优先，其次源里第一条非 IPv6、非「卡过」的线路。
+     * 慢线只在没有别的选择时才被拿出来，保证预播不会又把用户送进同一条会卡的线。
+     */
+    private fun primaryUrl(ch: Channel): String? {
+        val slow = slowUrlFor(ch.name)
+        goodUrlFor(ch.name)?.takeIf { it != slow && ch.urls.contains(it) && !store.isDeadLine(it) }?.let { return it }
+        ch.urls.firstOrNull { it != slow && !it.contains("://[") && !store.isDeadLine(it) }?.let { return it }
+        return ch.urls.firstOrNull()
+    }
 
     /**
      * 全屏播放时用上下键直接切台。
@@ -706,6 +773,8 @@ class MainActivity : Activity() {
 
     private fun applyFullscreen(on: Boolean, persist: Boolean) {
         fullscreen = on
+        // 列表一旦重新出现，「隐藏列表后双击退出」的窗口就作废
+        if (!on) lastBackExitAt = 0L
         setListPanelVisible(!on)
         if (persist) store.fullscreen = on
         if (on) {
@@ -949,6 +1018,14 @@ class MainActivity : Activity() {
         }
         // 上次能用、这次连不上了：把直通记录作废，别让下一个台继续踩它
         if (goodUrlFor(ch.name) == ch.urls.getOrNull(urlIndex)) forgetGoodLine(ch.name)
+        // 死线记 12 小时：同类免费源隔天再坏的几率很高，
+        // 记住它就能让下次切台直接跳过一次连接超时，而不是每次都从头试。
+        // 解码器失败是本机能力问题，不是线路问题，不能连累这条线。
+        if (!isDecoderFailure(error)) {
+            ch.urls.getOrNull(urlIndex)?.let { store.markDeadLine(it) }
+        }
+        // 记下这次坏掉的是哪条，换线后把它排到最后
+        val curFailedIdx = urlIndex
         // 线路失败不再记账，直接换下一条试
         if (autoTries < ch.urls.size - 1) {
             autoTries++
@@ -962,6 +1039,11 @@ class MainActivity : Activity() {
             }
             orderPos = (orderPos + 1) % lineOrder.size
             urlIndex = lineOrder[orderPos]
+            // 失败过的那条排到最后：下次打开这个台别再先踩一遍同一条死线
+            ch.urls.getOrNull(curFailedIdx)?.let { rememberSlowLine(ch.name, it) }
+            // 报错换线不算卡顿，清掉计时，别把旧账带到新线上
+            bufferingSince = 0L
+            lastReadyAt = 0L
             playCurrentUrl()
         } else {
             errorHint.visibility = View.VISIBLE
@@ -995,11 +1077,40 @@ class MainActivity : Activity() {
         if (playbackState == Player.STATE_READY || playbackState == Player.STATE_BUFFERING) {
             errorHint.visibility = View.GONE
         }
+        if (playbackState == Player.STATE_BUFFERING) {
+            // 只有「已经正常出图之后又断粮」才算卡顿；起播那一次本来就要缓冲，不能算
+            val ch = currentChannel
+            if (ch != null && activeChannel?.name == ch.name && lastReadyAt > 0L && bufferingSince == 0L) {
+                bufferingSince = SystemClock.uptimeMillis()
+                // 卡过一小会儿就开始备另一条线，别等到判死才从头缓冲
+                handler.removeCallbacks(stallRescueTask)
+                handler.postDelayed(stallRescueTask, STALL_RESCUE_MS)
+            }
+            return
+        }
         if (playbackState == Player.STATE_READY) {
+            handler.removeCallbacks(stallRescueTask)
             // 切台等待期间主播放器仍是旧台：它的 READY 不能清「切换中」，
             // 更不能把「还没出图」的新台线路提前写成已验证。
             val ch = currentChannel
             if (ch == null || activeChannel?.name != ch.name) return
+            val now = SystemClock.uptimeMillis()
+
+            // ---- 卡顿结算：这次卡了多久、这一阵卡了几回
+            if (bufferingSince > 0L) {
+                val stalled = now - bufferingSince
+                bufferingSince = 0L
+                if (now - rebufferWindowAt > REBUFFER_WINDOW_MS) {
+                    rebufferWindowAt = now
+                    rebufferCount = 0
+                }
+                rebufferCount++
+                if (shouldSwitchOnRebuffer(ch, stalled, now)) {
+                    switchToNextLineQuietly(ch, stalled, rebufferCount)
+                    return
+                }
+            }
+            lastReadyAt = now
             autoTries = 0
             // 播客续播：等播放器真 READY 再跳，太早 seek 会被 prepare 覆盖掉
             if (pendingSeekMs > 0L) {
@@ -1025,6 +1136,102 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * 该不该因为卡顿换线。
+     *
+     * 三个条件任一成立就换，但都加了「必须真卡过」这个前提：
+     *  - 单次卡超过 3 秒：用户已经能明显感到画面冻住
+     *  - 15 秒内卡 2 次：典型的小幅抖动型烂线，不换会一直抽
+     *  - 换线有 6 秒冷却、且总数不超过线路条数：防止两条烂线之间来回弹
+     */
+    private fun shouldSwitchOnRebuffer(ch: Channel, stalled: Long, now: Long): Boolean {
+        if (ch.urls.size <= 1) return false
+        if (now - quietSwitchAt < QUIET_SWITCH_GAP_MS) return false
+        if (quietSwitches >= ch.urls.size) return false
+        if (ch.isAudio || ch.isPodcast) return false
+        return stalled >= REBUFFER_LONG_MS || rebufferCount >= REBUFFER_MAX_TIMES
+    }
+
+    /**
+     * 卡顿 1.5 秒后就把「同一个台的另一条线路」偷偷拉到空闲预播槽里。
+     *
+     * 原来的自愈是等判死当前线 → 主播放器换线 → 重新缓冲 1~2 秒，
+     * 用户全程盯着冻住的画面。备用线就绪后 [onPreState] 会自动 swap 过去，
+     * 把这段等待压缩成一次热切换；只在有空闲槽时做，不抢正在播的带宽。
+     */
+    private val stallRescueTask = Runnable { startStallRescue() }
+
+    private fun startStallRescue() {
+        if (destroyed || !resumed) return
+        val ch = currentChannel ?: return
+        if (activeChannel?.name != ch.name) return
+        if (player?.playbackState != Player.STATE_BUFFERING) return
+        if (ch.isAudio || ch.isPodcast || ch.urls.size <= 1) return
+        // 已经有槽在给这个台拉线（可能是预测，也可能是上一轮救援），不重复起流
+        if (preSlots.any { !it.failed && it.channel?.name == ch.name }) return
+        // 只用真正空闲的槽；两个槽都在预测时不硬抢，免得带宽更紧张
+        val slot = preSlots.firstOrNull { it.channel == null && !it.failed } ?: return
+        val curUrl = ch.urls.getOrNull(urlIndex) ?: return
+        val alt = lineOrderFor(ch).mapNotNull { ch.urls.getOrNull(it) }
+            .firstOrNull { it != curUrl && !store.isDeadLine(it) } ?: return
+        forgetGoodLine(ch.name)
+        rememberSlowLine(ch.name, curUrl)
+        Log.w("XiaoHeiTV", "stallRescue ${ch.name}：卡住的线路 ${urlIndex + 1} 换备用线起流")
+        startPrebuffer(slot, ch, alt, rescue = true)
+    }
+
+    /**
+     * 静默换线：这条线能出图，但反复卡，不等它报错就自己换下一条。
+     *
+     * 不弹提示、不切台，用户只会看到画面「顿一下然后顺了」。
+     * 换下来的线进慢线表，下次起播排到最后，不会每次打开都先卡一遍。
+     */
+    private fun switchToNextLineQuietly(ch: Channel, stalledMs: Long, times: Int) {
+        if (lineOrder.isEmpty()) buildLineOrder(ch)
+        if (lineOrder.size <= 1) return
+        val curIdx = urlIndex
+        val curUrl = ch.urls.getOrNull(curIdx) ?: return
+        quietSwitchAt = SystemClock.uptimeMillis()
+        quietSwitches++
+        rebufferCount = 0
+        rebufferWindowAt = 0L
+        bufferingSince = 0L
+        // 能出图说明不是死线，只是慢：撤掉好线记录，记进慢线表
+        forgetGoodLine(ch.name)
+        rememberSlowLine(ch.name, curUrl)
+
+        var guard = 0
+        do {
+            orderPos = (orderPos + 1) % lineOrder.size
+            guard++
+        } while (lineOrder[orderPos] == curIdx && guard < lineOrder.size)
+        urlIndex = lineOrder[orderPos]
+        Log.w(
+            "XiaoHeiTV",
+            "rebuffer ${ch.name} 卡${stalledMs}ms/${times}次 line[${curIdx + 1}/${ch.urls.size}]" +
+                " -> line[${urlIndex + 1}/${ch.urls.size}]"
+        )
+        // 新线从零起播，别把它这次的起播缓冲又算成一次卡顿
+        lastReadyAt = 0L
+        playCurrentUrl()
+    }
+
+    /**
+     * 换台后复位卡顿统计。
+     *
+     * 「卡不卡」是「这条线在这个台上」的属性，跨台累计会把上一台的账记到下一台头上，
+     * 结果就是刚切过去还没播就莫名其妙换线。
+     */
+    private fun resetRebufferStats() {
+        handler.removeCallbacks(stallRescueTask)
+        lastReadyAt = 0L
+        bufferingSince = 0L
+        rebufferCount = 0
+        rebufferWindowAt = 0L
+        quietSwitchAt = 0L
+        quietSwitches = 0
+    }
+
     // ---------------------------------------------------------------- 预播的播放器
 
     private fun onPreError(slot: PreSlot, error: PlaybackException) {
@@ -1032,6 +1239,9 @@ class MainActivity : Activity() {
             "XiaoHeiTV",
             "preError[${slot.index}] ${slot.channel?.name} cause=${error.cause?.javaClass?.simpleName}:${error.cause?.message}"
         )
+        // 预播里确认连不上的线路也记账：下一次连这个台时直接跳过，
+        // 不用再等一次同样的连接超时。解码器失败不算线路问题。
+        if (!isDecoderFailure(error)) slot.url?.let { store.markDeadLine(it) }
         // 预播不接画面，试错完全不打扰用户：先自己换条线路再拉一次。
         val failed = slot.channel
         if (failed != null && slot.tries < 2 && failed.urls.size > 1) {
@@ -1126,6 +1336,14 @@ class MainActivity : Activity() {
             slot.player = old
             player = np
             activeChannel = ch
+            resetRebufferStats()
+            // 热切换接管的播放器通常早就是 READY，不会再收到一次
+            // onPlaybackStateChanged(READY)。而 resetRebufferStats() 把 lastReadyAt 清成了 0，
+            // 后面的 BUFFERING 就永远不会被当成「卡顿」——秒切路径上的自愈等于失效。
+            // 这里必须把「这条线已经出过图」的时间戳补回去。
+            if (np.playbackState == Player.STATE_READY) {
+                lastReadyAt = SystemClock.uptimeMillis()
+            }
             slot.url?.let { rememberGoodLine(ch.name, it) }
             slot.tries = 0
             swapAt = SystemClock.uptimeMillis()
@@ -1144,6 +1362,7 @@ class MainActivity : Activity() {
             slot.channel = null
             slot.url = null
             slot.failed = false
+            slot.rescue = false
             errorHint.visibility = View.GONE
             playStartedAt = 0L
             handler.removeCallbacks(prebufferTimeout)
@@ -1175,7 +1394,13 @@ class MainActivity : Activity() {
     }
 
     /** 在某个预播槽上把某条线路拉起来（静音、无画面，不会打扰正在看的节目） */
-    private fun startPrebuffer(slot: PreSlot, ch: Channel, url: String, resetTries: Boolean = true) {
+    private fun startPrebuffer(
+        slot: PreSlot,
+        ch: Channel,
+        url: String,
+        resetTries: Boolean = true,
+        rescue: Boolean = false
+    ) {
         if (destroyed || !resumed) return
         val p = slot.player
         if (slot.channel?.name == ch.name && slot.url == url && p.playbackState != Player.STATE_IDLE) return
@@ -1185,6 +1410,7 @@ class MainActivity : Activity() {
             slot.channel = ch
             slot.url = url
             slot.failed = false
+            slot.rescue = rescue
             p.stop()
             p.volume = 0f
             setAudioEnabled(p, false)
@@ -1197,6 +1423,7 @@ class MainActivity : Activity() {
             slot.failed = true
             slot.channel = null
             slot.url = null
+            slot.rescue = false
         }
     }
 
@@ -1205,12 +1432,14 @@ class MainActivity : Activity() {
         slot.url = null
         slot.failed = false
         slot.tries = 0
+        slot.rescue = false
         // 停一个已经 release 的播放器会抛 IllegalStateException，不能让它冒到切台主线程
         runCatching { slot.player.stop() }
     }
 
     private fun cancelPrebuffer() {
         handler.removeCallbacks(prebufferTimeout)
+        handler.removeCallbacks(stallRescueTask)
         pendingPrebufferStarts.values.forEach { handler.removeCallbacks(it) }
         pendingPrebufferStarts.clear()
         preSlots.forEach(::stopSlot)
@@ -1263,11 +1492,13 @@ class MainActivity : Activity() {
         }
         if (preSlots.isEmpty()) return
         runCatching {
-            val flat = zapChannels()
+            val flat = prebufferSequence()
             val n = flat.size
             if (n < 2) return
-            val i = flat.indexOfFirst { it.name == cur.name }
-            if (i < 0) return
+            val found = flat.indexOfFirst { it.name == cur.name }
+            // 当前播放台不在本组（刚从别的组切过来看一眼）：从本组第一台开始备，
+            // 别因为找不到索引就整条流水线停摆。
+            val i = if (found >= 0) found else if (!fullscreen) 0 else return
             // 预测顺序见 ZapPredict：同方向下一台 → 来时的上一台 → 同方向再下一台。
             // 把「来时那个台」提到第二位是为「广告时间切走、广告结束切回」准备的——
             // 这个动作在电视上比连按同向常见得多，而老顺序会让它每次都冷启动 4 秒起步。
@@ -1281,6 +1512,11 @@ class MainActivity : Activity() {
             preSlots.forEach { s ->
                 val c = s.channel
                 if (c == null || s.failed) return@forEach
+                // 卡顿时临时拉的备用线正在起流：留着它，流水线不许停掉
+                if (s.rescue && c.name == cur.name) {
+                    used += s.index
+                    return@forEach
+                }
                 if (targets.any { it.name == c.name }) {
                     used += s.index
                     covered += c.name
@@ -1309,6 +1545,21 @@ class MainActivity : Activity() {
             }
             preSlots.filter { it.index !in used }.forEach(::stopSlot)
         }.onFailure { Log.d("XiaoHeiTV", "prebufferNext 跳过 ${it.javaClass.simpleName}") }
+    }
+
+    /**
+     * 预播预测用的频道序列。
+     *
+     * 全屏上下键是跨组连切（央视最后一台 → 卫视第一台），必须用全台序列；
+     * 但列表里按 OK 播台时，用户接下来几乎一定还在当前分组里挑，
+     * 这时候拿全台序列去猜，预播槽装的常常是隔壁组的台，命中率白丢一半。
+     */
+    private fun prebufferSequence(): List<Channel> {
+        if (!fullscreen) {
+            val inGroup = groups.getOrNull(groupIndex)?.channels.orEmpty()
+            if (inGroup.size >= 2) return inGroup
+        }
+        return zapChannels()
     }
 
     /**
@@ -1419,19 +1670,18 @@ class MainActivity : Activity() {
      * 线路的尝试顺序：上次成功过的那条排第一 → 其余保持源里的原始顺序 → IPv6 沉底。
      * 纯函数，不改成员变量，预播换线路时也用它（不会把正在播的台的顺序搞乱）。
      */
-    private fun lineOrderFor(ch: Channel): List<Int> {
-        val base = ch.urls.indices.sortedWith(
-            compareBy<Int>(
-                { if (ch.urls[it].contains("://[")) 1 else 0 },
-                { it }
-            )
-        )
-        val good = goodUrlFor(ch.name)
-        val goodIdx = good?.let { g -> ch.urls.indexOfFirst { it == g } } ?: -1
-        return if (goodIdx >= 0 && !ch.urls[goodIdx].contains("://[")) {
-            listOf(goodIdx) + base.filter { it != goodIdx }
-        } else base
-    }
+    /**
+     * 线路优先顺序：好线置顶 → 其余按源里顺序 → 卡过的线垫底 → IPv6 最后。
+     *
+     * 慢线不删除、只是排到最后：免费源本来就少，一条能出图的线就算会卡也留着兜底，
+     * 但不再让它挡在第一条，省得每次打开都先卡一遍。
+     */
+    private fun lineOrderFor(ch: Channel): List<Int> = LineOrder.order(
+        urls = ch.urls,
+        goodUrl = goodUrlFor(ch.name),
+        slowUrl = slowUrlFor(ch.name),
+        isDead = { store.isDeadLine(it) }
+    )
 
     private fun buildLineOrder(ch: Channel) {
         lineOrder = lineOrderFor(ch)
@@ -1544,6 +1794,7 @@ class MainActivity : Activity() {
         // 这是所有切台路径的最后一道兜底：解码器或播放器状态异常时只记日志、不让它冒到主线程
         runCatching {
             activeChannel = ch
+            resetRebufferStats()
             p.volume = 1f
             setAudioEnabled(p, true)
             // playWhenReady 先置位，prepare 一完成立刻出画面，不用再等一次 play() 的回调
@@ -2435,10 +2686,19 @@ class MainActivity : Activity() {
                 return true
             }
             KeyEvent.KEYCODE_BACK -> {
-                // 返回键只在界面层级内回退，永远不退出应用（要退出用电视的 Home 键）：
+                // 返回键逐层回退：
+                //   全屏 → 唤出频道列表（播客全屏 → 回这一档的分集）
                 //   焦点在右栏 → 回到左栏
-                //   焦点在左栏（列表展开）→ 收起面板，全屏播放
-                //   已经在全屏 → 唤出频道列表，焦点落回正在播的台
+                //   最外层（列表 + 焦点在左栏）→ 隐藏列表进入纯播放；
+                //                                 紧接着 2 秒内再按一次才退出应用
+                // 过滤长按产生的 repeat，避免一次长按被当成两次点击。
+                if (event.repeatCount == 0) {
+                    val now = SystemClock.uptimeMillis()
+                    if (lastBackExitAt != 0L && now - lastBackExitAt < exitDoubleTapMs) {
+                        finish()
+                        return true
+                    }
+                }
                 if (fullscreen) {
                     // 播客全屏按返回＝回到这一档的分集，而不是跑去频道列表
                     val show = currentChannel
@@ -2453,8 +2713,13 @@ class MainActivity : Activity() {
                     backToGroups()
                     return true
                 }
-                applyFullscreen(true, persist = true)
-                showInfo()
+                // 最外层：把列表面板连同压暗层一起收掉，只留正在播的画面。
+                // 这一步不写进偏好，重启应用仍是带列表进入；再按一次返回才真正退出。
+                if (event.repeatCount == 0) {
+                    applyFullscreen(true, persist = false)
+                    lastBackExitAt = SystemClock.uptimeMillis()
+                    safeToast("已隐藏列表，再按一次返回键退出应用")
+                }
                 return true
             }
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
@@ -2643,16 +2908,37 @@ class MainActivity : Activity() {
         const val INFO_HOLD_PROGRAM_MS = 6_000L
 
         /** 5s：低于这个量再出图，网一抖就卡 */
-        const val MIN_BUFFER_MS = 5_000
+        const val MIN_BUFFER_MS = 8_000
 
-        /** 15s：直播不需要囤 20 秒，囤多了反而换台时旧数据丢得慢 */
-        const val MAX_BUFFER_MS = 15_000
+        /** 22s：直播多囤一点抗抖动；免费源抖动频繁，7 秒余量能挡掉大部分「看两秒卡一下」 */
+        const val MAX_BUFFER_MS = 22_000
 
-        /** 0.3s：凑够 300ms 就出图（原来 500ms），直播首帧能再省一点 */
-        const val BUFFER_FOR_START_MS = 300
+        /**
+         * 1.2s：凑够 1.2 秒才出图（原 300ms）。
+         *
+         * 300ms 连半个分片都不到，很多时候画面刚出来就立刻断粮，用户看到的就是「一开播就卡」。
+         * 抬到 1.2 秒，起播大约慢 0.9 秒，但换来的是出图之后能连续播，体感明显更顺。
+         * 预播流水线已经提前缓存，真正切台时这 0.9 秒基本感觉不到。
+         */
+        const val BUFFER_FOR_START_MS = 1_200
 
-        /** 1s：卡顿后只要补回 1s 就恢复播放，不用等回满 */
-        const val BUFFER_AFTER_REBUFFER_MS = 1_000
+        /** 2.5s：卡过之后多补一点再恢复，避免「恢复—立刻再卡」的抽风循环 */
+        const val BUFFER_AFTER_REBUFFER_MS = 2_500
+
+        /** 单次卡顿超过 3s 就认定这条线不行，直接换下一条（原 4s，等满 4 秒已经很明显了） */
+        const val REBUFFER_LONG_MS = 3_000L
+
+        /** 15 秒窗口内卡满 2 次也换线：小幅抖动型的烂线不换会一直抽 */
+        const val REBUFFER_MAX_TIMES = 2
+
+        /** 卡顿统计窗口 */
+        const val REBUFFER_WINDOW_MS = 15_000L
+
+        /** 两次静默换线的最小间隔，防止两条烂线来回弹（原 10s） */
+        const val QUIET_SWITCH_GAP_MS = 6_000L
+
+        /** 卡满 1.5s 就开始在空闲槽里备同一台的另一条线，为热切换抢时间 */
+        const val STALL_RESCUE_MS = 1_500L
 
         /** 3.5s：预播迟迟不就绪就别让用户盯着静帧了（超时改为提前接管，不丢弃已缓冲数据） */
         const val PREBUFFER_TIMEOUT_MS = 3_500L

@@ -76,6 +76,39 @@ class SourceStore(context: Context) {
 
     fun clearGoodLine(name: String) = prefs.edit().remove("goodLine:$name").apply()
 
+    /**
+     * 卡顿线路表：能出图、但实测反复卡的线路。
+     *
+     * 和 goodLine 是一对：goodLine 记「上次顺的那条」，这张记「试过会卡的那条」。
+     * 起播时慢线排到最后，只有别的线全不行了才轮到它，避免每次打开都先卡一遍。
+     */
+    fun slowLine(name: String): String? = prefs.getString("slowLine:$name", null)
+
+    fun setSlowLine(name: String, url: String) =
+        prefs.edit().putString("slowLine:$name", url).apply()
+
+    fun clearSlowLine(name: String) = prefs.edit().remove("slowLine:$name").apply()
+
+    /**
+     * 死线记录：确认连不上的线路在一段时间内直接排到队尾。
+     *
+     * 和 slowLine 的区别：slowLine 是「能出图但会卡」，这里是「根本起不来」。
+     * 免费源里同一条坏线往往连续几天都坏，可一旦清掉记录，每次打开都要
+     * 重新在它身上耗掉一次连接超时——这正是「央视/卫视切台慢」的主要来源之一。
+     * 12 小时后自动过期，源修复后不用手动清缓存也能恢复。
+     */
+    fun isDeadLine(url: String): Boolean {
+        val at = prefs.getLong("deadLine:$url", 0L)
+        return at > 0L && System.currentTimeMillis() - at < DEAD_LINE_TTL_MS
+    }
+
+    fun markDeadLine(url: String) =
+        prefs.edit().putLong("deadLine:$url", System.currentTimeMillis()).apply()
+
+    private companion object {
+        const val DEAD_LINE_TTL_MS = 12 * 60 * 60 * 1000L
+    }
+
     // ---------------------------------------------------------------- 播客续播
     // 播客是点播内容，"上次听到 12:31" 比"重新从头听"重要得多。
     // 键用 showId + 音频地址哈希，音频地址变了就自然当成新的一集。
