@@ -102,8 +102,13 @@ class RadioChannelTest {
     @Test
     fun `播客排在固定分组顺序的最后且不再有其他分组`() {
         assertEquals(ChannelGroups.PODCAST, ChannelGroups.ORDER.last())
-        assertEquals(6, ChannelGroups.ORDER.size)
+        assertEquals(7, ChannelGroups.ORDER.size)
         assertTrue(ChannelGroups.ORDER.contains(ChannelGroups.RADIO))
+        // 有声书紧挨在播客前面：都是点播音频，放一起才好找
+        assertEquals(
+            ChannelGroups.AUDIOBOOK,
+            ChannelGroups.ORDER[ChannelGroups.ORDER.size - 2]
+        )
         assertFalse("固定顺序里不应再有「其他」", ChannelGroups.ORDER.contains("其他"))
     }
 

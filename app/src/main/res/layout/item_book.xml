@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  书架的一本书：封面 + 书名 + 一行说明。
+  封面下面的首字是「图片没加载出来」时的兜底：Glide 失败会清空 ImageView，
+  露出下面那块暗玻璃和这个字，书架不会出现空白格子。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="6dp"
+    android:background="@drawable/item_book_bg"
+    android:focusable="true"
+    android:focusableInTouchMode="true"
+    android:orientation="vertical"
+    android:padding="6dp"
+    android:stateListAnimator="@animator/item_scale">
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="128dp">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/book_cover_bg" />
+
+        <TextView
+            android:id="@+id/bookInitial"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="center"
+            android:textColor="#33FFFFFF"
+            android:textSize="42sp"
+            tools:text="三" />
+
+        <ImageView
+            android:id="@+id/bookCover"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="封面"
+            android:scaleType="centerCrop" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/bookTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:ellipsize="end"
+        android:fontFamily="sans-serif-medium"
+        android:maxLines="2"
+        android:minLines="2"
+        android:textColor="@color/text_primary"
+        android:textSize="13sp"
+        tools:text="三国演义" />
+
+    <TextView
+        android:id="@+id/bookMeta"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/text_tertiary"
+        android:textSize="10sp"
+        tools:text="曦爸读经典" />
+</LinearLayout>

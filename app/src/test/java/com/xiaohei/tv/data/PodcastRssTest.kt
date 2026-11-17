@@ -68,6 +68,16 @@ class PodcastRssTest {
     }
 
     @Test
+    fun `podcast transcript 标签解析成字幕地址`() {
+        val xml = rss(
+            """<item><title>T</title><enclosure url="https://x.example.com/a.mp3"/><podcast:transcript url="https://wav.pub/a.vtt" type="text/vtt" rel="captions"/></item>"""
+        )
+        assertEquals("https://wav.pub/a.vtt", PodcastRss.parse(xml, show).single().transcriptUrl)
+        // 没有标签的集必须留空，播放页据此不显示字幕
+        assertTrue(PodcastRss.parse(rss(item("无字幕")), show).single().transcriptUrl.isEmpty())
+    }
+
+    @Test
     fun `最多只取 limit 集`() {
         val xml = rss(*Array(20) { item("第 ${it + 1} 集") })
         assertEquals(5, PodcastRss.parse(xml, show, limit = 5).size)
@@ -122,7 +132,10 @@ class PodcastRssTest {
         assertTrue("节目行本身不该有线路", ch.urls.isEmpty())
         assertEquals(ChannelGroups.PODCAST, ch.group)
         assertFalse(ch.name.isBlank())
-        assertEquals(PodcastCatalog.shows.first().author, ch.subtitle)
+        // 第二行是「分类 · 作者」：类型区分在右栏列表里也要看得见
+        val show = PodcastCatalog.shows.first()
+        assertTrue("副标题少了作者：${ch.subtitle}", ch.subtitle.contains(show.author))
+        assertTrue("副标题少了分类：${ch.subtitle}", ch.subtitle.contains(show.category))
     }
 
     @Test

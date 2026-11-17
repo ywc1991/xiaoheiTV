@@ -46,11 +46,35 @@ object PodcastRss {
                     title = title,
                     url = url,
                     durationMs = durationMs(clean(text(block, "itunes:duration"))),
-                    pubDateMs = pubDateMs(clean(text(block, "pubDate")))
+                    pubDateMs = pubDateMs(clean(text(block, "pubDate"))),
+                    transcriptUrl = transcriptUrl(block)
                 )
             )
         }
         return out
+    }
+
+    /**
+     * WebVTT 字幕地址：<podcast:transcript url="..." type="text/vtt" rel="captions"/>。
+     * 有的源同一集给好几条（转写稿 / 多语言），优先 captions + vtt，没有就取第一条 http 的。
+     */
+    private fun transcriptUrl(block: String): String {
+        val tags = Regex("<podcast:transcript\\b[^>]*?/?>", RegexOption.IGNORE_CASE)
+            .findAll(block).map { it.value }.toList()
+        if (tags.isEmpty()) return ""
+        fun attrOf(tag: String, name: String): String {
+            Regex("\\b" + Regex.escape(name) + "\\s*=\\s*\"([^\"]*)\"", RegexOption.IGNORE_CASE)
+                .find(tag)?.let { return it.groupValues[1] }
+            Regex("\\b" + Regex.escape(name) + "\\s*=\\s*'([^']*)'", RegexOption.IGNORE_CASE)
+                .find(tag)?.let { return it.groupValues[1] }
+            return ""
+        }
+        val vtt = tags.filter { attrOf(it, "url").startsWith("http") }
+        val pick = vtt.firstOrNull {
+            it.contains("captions", ignoreCase = true) && it.contains("vtt", ignoreCase = true)
+        } ?: vtt.firstOrNull { it.contains("vtt", ignoreCase = true) }
+        ?: vtt.firstOrNull() ?: return ""
+        return attrOf(pick, "url")
     }
 
     /** 音频地址：标准是 <enclosure url="...">，少数源只写了 media:content */

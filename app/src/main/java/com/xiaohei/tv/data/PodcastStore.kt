@@ -16,7 +16,8 @@ import java.net.URL
  *  3. 网络（都过期或没有缓存时才拉）
  *
  * 网络失败时**退回旧缓存**：播客断网时不该变成一片空白，上次能听的列表照样能听。
- * TSV 而不是 JSON/CBOR：分集就四列，自己写自己读，不必为了缓存引一个序列化库。
+ * TSV 而不是 JSON/CBOR：分集就是几列文本，自己写自己读，不必为了缓存引一个序列化库。
+ * 缓存首行带格式版本（#feed\tv2\t）：加字幕列以后旧缓存必须重拉一次才有字幕地址。
  */
 class PodcastStore(context: Context) {
 
@@ -79,7 +80,8 @@ class PodcastStore(context: Context) {
                     title = title,
                     url = url,
                     durationMs = p[2].toLongOrNull() ?: 0L,
-                    pubDateMs = p[3].toLongOrNull() ?: 0L
+                    pubDateMs = p[3].toLongOrNull() ?: 0L,
+                    transcriptUrl = p.getOrNull(4).orEmpty()
                 )
             }
         }.getOrNull()
@@ -95,7 +97,8 @@ class PodcastStore(context: Context) {
                 sb.append(escape(e.title)).append('\t')
                     .append(e.url).append('\t')
                     .append(e.durationMs).append('\t')
-                    .append(e.pubDateMs).append('\n')
+                    .append(e.pubDateMs).append('\t')
+                    .append(e.transcriptUrl).append('\n')
             }
             cacheFile(id).writeText(sb.toString())
         }
@@ -128,7 +131,10 @@ class PodcastStore(context: Context) {
                 }
                 sb.toString()
             }
-            return PodcastRss.parse(text, show).map { it.copy(showName = show.name) }
+            return BookOrder.apply(
+                isBook = show.isBook,
+                list = PodcastRss.parse(text, show, show.maxEpisodes)
+            ).map { it.copy(showName = show.name) }
         } finally {
             runCatching { conn.disconnect() }
         }
@@ -137,7 +143,7 @@ class PodcastStore(context: Context) {
     private companion object {
         const val TTL_MS = 12 * 60 * 60 * 1000L
         /** 缓存首行的来源标记，用来挡住「换了 feed 还在用旧分集」 */
-        const val FEED_TAG = "#feed\t"
+        const val FEED_TAG = "#feed\tv2\t"
         const val CONNECT_TIMEOUT_MS = 8_000
         const val READ_TIMEOUT_MS = 12_000
         const val UA = "XiaoHeiTV/2.9 (Android TV)"

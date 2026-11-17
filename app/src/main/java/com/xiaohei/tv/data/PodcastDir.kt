@@ -23,6 +23,8 @@ object PodcastDir {
     private const val MAX_AUTHOR = 24
     private const val MAX_DESC = 60
     private const val MAX_FEED = 400
+    private const val MAX_COVER = 400
+    private const val MAX_CATEGORY = 8
 
     /** id 只允许小写字母/数字/下划线/短横，且必须以字母数字开头：同时满足文件名安全 */
     private val idRegex = Regex("^[a-z0-9][a-z0-9_-]{0,31}$")
@@ -71,8 +73,18 @@ object PodcastDir {
             if (name.isEmpty() || !isHttpUrl(feed) || feed.length > MAX_FEED) continue
             val author = (o["author"] as? String)?.trim().orEmpty().take(MAX_AUTHOR)
             val desc = (o["desc"] as? String)?.trim().orEmpty().take(MAX_DESC)
+            // 封面上书架用：只认 http(s)，其它一律当没写（书架会退回首字兑底）
+            val cover = (o["cover"] as? String)?.trim().orEmpty()
+            // 分类决定它落在书架的哪一节；写了个不认识的分类也不会丢，会落到「其他」
+            val category = (o["category"] as? String)?.trim().orEmpty().take(MAX_CATEGORY)
 
-            shows.add(PodcastShow(id = id, name = name, author = author, feed = feed, desc = desc))
+            shows.add(
+                PodcastShow(
+                    id = id, name = name, author = author, feed = feed, desc = desc,
+                    cover = if (isHttpUrl(cover) && cover.length <= MAX_COVER) cover else "",
+                    category = category
+                )
+            )
         }
         // 全是废条目等同于「这份文件没用」，别拿它把列表清空
         if (shows.isEmpty() && removed.isEmpty()) return null
@@ -90,11 +102,29 @@ object PodcastDir {
         remote: List<PodcastShow>,
         removed: Set<String>
     ): List<PodcastShow> {
+        // 远端文件只负责「有哪些节目、什么顺序」，封面和分类通常是它不知道的部分
+        // （手写 JSON 里几乎不会写这两栏）。所以同 id / 同 feed 的条目要拿本地的补上：
+        // 不补的话，远端清单一覆盖，书架就会变成一墙没有封面的灰格子，
+        // 分类也全空、全挤进「其他」——这正是线上踩到的样子。
+        val localById = builtin.associateBy { it.id }
+        val localByFeed = builtin.associateBy { it.feed }
+
         val out = ArrayList<PodcastShow>(builtin.size + remote.size)
         val ids = HashSet<String>()
         for (s in remote) {
             if (s.id in removed || !ids.add(s.id)) continue
-            out.add(s)
+            val local = localById[s.id] ?: localByFeed[s.feed]
+            // 认出来的本地条目要算「已经被远端认领」，否则下面兜底那轮又会按老 id 加一遍，
+            // 同一档播客在书架上出现两次
+            if (local != null) ids.add(local.id)
+            out.add(
+                if (local == null) s else s.copy(
+                    author = s.author.ifEmpty { local.author },
+                    desc = s.desc.ifEmpty { local.desc },
+                    cover = s.cover.ifEmpty { local.cover },
+                    category = s.category.ifEmpty { local.category }
+                )
+            )
         }
         for (s in builtin) {
             if (s.id in removed || s.id in ids) continue

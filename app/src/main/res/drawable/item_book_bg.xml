@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  书架卡片：
+    焦点 → 白 24%→10% 的淡渐变 + 2dp 白描边 + 轻微放大（和频道卡片同一套手感）
+    正在听 → 极淡白底，安静地亮着
+    其余 → 透明
+  封面自己有圆角，所以卡片圆角比封面更小（16dp vs 12dp），套在一起不会露出尖角。
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:endColor="#1AFFFFFF"
+                android:startColor="#3DFFFFFF"
+                android:type="linear" />
+            <corners android:radius="16dp" />
+            <stroke
+                android:width="2dp"
+                android:color="@color/focus_stroke" />
+        </shape>
+    </item>
+
+    <item android:state_activated="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/glass_fill" />
+            <corners android:radius="16dp" />
+        </shape>
+    </item>
+
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <corners android:radius="16dp" />
+        </shape>
+    </item>
+</selector>

@@ -5,10 +5,11 @@ import com.xiaohei.tv.model.Channel
 /**
  * 频道分组规则。
  *
- * 顺序：收藏 → 央视 → 卫视 → 港澳台 → 广播 → 播客
+ * 顺序：收藏 → 央视 → 卫视 → 港澳台 → 广播 → 有声书 → 播客
  *
  * 「广播」是纯音频网络电台，独立成组，不参与视频台的全屏上下键循环。
- * 「播客」是点播音频：一档节目一行，按 OK 打开分集面板，同样不进切台循环。
+ * 「有声书」是按本聚合的音频书（一本一行，OK 打开封面书架），
+ * 「播客」是点播音频：一档节目一行，按 OK 打开分集面板，两者都不进切台循环。
  * 注意：卫视规则排在港澳台之前，所以「香港卫视」「蓮花衛視」「世界卫视」
  * 会归入「卫视」，而不是「港澳台」。
  *
@@ -22,10 +23,11 @@ object ChannelGroups {
     const val SATELLITE = "卫视"
     const val HKMO_TW = "港澳台"
     const val RADIO = "广播"
+    const val AUDIOBOOK = "有声书"
     const val PODCAST = "播客"
 
     /** 固定展示顺序（不再有「其他」） */
-    val ORDER = listOf(FAVORITE, CCTV, SATELLITE, HKMO_TW, RADIO, PODCAST)
+    val ORDER = listOf(FAVORITE, CCTV, SATELLITE, HKMO_TW, RADIO, AUDIOBOOK, PODCAST)
 
     private val cctvRegex = Regex("""^\s*(CCTV|CETV)""", RegexOption.IGNORE_CASE)
 

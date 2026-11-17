@@ -190,4 +190,49 @@ class PodcastDirTest {
         assertEquals("id 不能重复", ids.size, ids.toSet().size)
         assertTrue("feed 必须是 http(s)", r.shows.all { it.feed.startsWith("https://") })
     }
+
+    @Test
+    fun `远端条目缺封面和分类时用本地的补上`() {
+        // 远端 JSON 一般只写 id/名字/feed，封面分类都在 APK 里。
+        // 不补的话，远端一覆盖书架就变成一墙灰格子、分类全挤进「其他」。
+        val local = PodcastShow(
+            id = "a", name = "甲", author = "作者甲", feed = "https://x.com/a.xml",
+            cover = "https://img/a.jpg", category = "科技数码"
+        )
+        val remote = PodcastShow(id = "a", name = "甲（新）", author = "", feed = "https://x.com/a.xml")
+        val merged = PodcastDir.merge(listOf(local), listOf(remote), emptySet())
+        assertEquals(1, merged.size)
+        assertEquals("甲（新）", merged[0].name)
+        assertEquals("https://img/a.jpg", merged[0].cover)
+        assertEquals("科技数码", merged[0].category)
+        assertEquals("作者甲", merged[0].author)
+    }
+
+    @Test
+    fun `远端自己写了封面就用远端的`() {
+        val local = PodcastShow(
+            id = "a", name = "甲", author = "a", feed = "https://x.com/a.xml",
+            cover = "https://img/old.jpg", category = "科技数码"
+        )
+        val remote = PodcastShow(
+            id = "a", name = "甲", author = "a", feed = "https://x.com/a.xml",
+            cover = "https://img/new.jpg", category = "人文对谈"
+        )
+        val merged = PodcastDir.merge(listOf(local), listOf(remote), emptySet())
+        assertEquals("https://img/new.jpg", merged[0].cover)
+        assertEquals("人文对谈", merged[0].category)
+    }
+
+    @Test
+    fun `换了 id 但 feed 相同的条目也能补上本地信息`() {
+        val local = PodcastShow(
+            id = "old", name = "甲", author = "a", feed = "https://x.com/a.xml",
+            cover = "https://img/a.jpg", category = "故事纪实"
+        )
+        val remote = PodcastShow(id = "new", name = "甲", author = "", feed = "https://x.com/a.xml")
+        val merged = PodcastDir.merge(listOf(local), listOf(remote), emptySet())
+        assertEquals(1, merged.size)
+        assertEquals("https://img/a.jpg", merged[0].cover)
+        assertEquals("故事纪实", merged[0].category)
+    }
 }

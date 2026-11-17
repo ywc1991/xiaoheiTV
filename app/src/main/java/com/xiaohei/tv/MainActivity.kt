@@ -10,6 +10,7 @@ import android.util.Log
 import android.view.KeyEvent
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -26,15 +27,23 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.resource.bitmap.RoundedCorners
+import com.bumptech.glide.request.RequestOptions
+import com.xiaohei.tv.data.AudiobookCatalog
 import com.xiaohei.tv.data.ChannelGroups
 import com.xiaohei.tv.data.EpgEntry
 import com.xiaohei.tv.data.EpgRepository
 import com.xiaohei.tv.data.PodcastCatalog
 import com.xiaohei.tv.data.PodcastDirStore
 import com.xiaohei.tv.data.PodcastStore
+import com.xiaohei.tv.data.PodcastTranscript
 import com.xiaohei.tv.data.SourceStore
+import com.xiaohei.tv.data.TranscriptCue
+import com.xiaohei.tv.data.TranscriptStore
 import com.xiaohei.tv.model.Channel
 import com.xiaohei.tv.model.PodcastEpisode
 import com.xiaohei.tv.model.PodcastShow
@@ -43,6 +52,7 @@ import com.xiaohei.tv.player.AdFilterDataSourceFactory
 import com.xiaohei.tv.player.AdRules
 import com.xiaohei.tv.player.IcyDataSourceFactory
 import com.xiaohei.tv.player.TlsRelax
+import com.xiaohei.tv.ui.BookAdapter
 import com.xiaohei.tv.ui.ChannelAdapter
 import com.xiaohei.tv.ui.EpisodeAdapter
 import com.xiaohei.tv.ui.GroupAdapter
@@ -83,6 +93,8 @@ class MainActivity : Activity() {
     /** 列表面板下面那层压暗：玻璃浮起来需要背景够沉 */
     private lateinit var listScrim: View
     private lateinit var laneTitle: TextView
+    /** 底部操作提示：不同分组下 OK 的含义不一样（播放 / 看分集 / 开书架） */
+    private lateinit var laneHint: TextView
     private lateinit var playerView: androidx.media3.ui.PlayerView
     private lateinit var infoBar: View
     private lateinit var infoName: TextView
@@ -124,19 +136,46 @@ class MainActivity : Activity() {
     private lateinit var episodeAdapter: EpisodeAdapter
     private lateinit var episodeShowName: TextView
     private lateinit var episodeShowMeta: TextView
+    /** 有声书才显示的封面；播客留 GONE，标题仍从面板最上面开始 */
+    private lateinit var episodeCover: ImageView
     private lateinit var episodeLoading: View
     private lateinit var episodeEmpty: TextView
     private lateinit var podcastProgress: View
     private lateinit var podcastBar: ProgressBar
     private lateinit var podcastTime: TextView
+    /** 字幕只在播客播放页出现；电台和视频台永远不显示 */
+    private lateinit var podcastSubtitle: TextView
+    private lateinit var transcriptStore: TranscriptStore
+    /** 当前这一集的字幕表，只在主线程读写 */
+    private var activeCues: List<TranscriptCue> = emptyList()
+    /** 换集时让上一集还没下完的字幕结果作废 */
+    private var transcriptSeq = 0
 
     /** 分集面板是否展开（展开时方向键交给分集列表，返回逐层退出） */
     private var panelOpen = false
+    /** 章节面板是从书架打开的：返回时回书架，而不是回两栏列表 */
+    private var panelFromShelf = false
     private var panelShow: PodcastShow? = null
     private var panelEpisodes: List<PodcastEpisode> = emptyList()
 
+    // ---------------------------------------------------------------- 书架
+    // 有声书与播客共用同一层封面墙：封面 + 名字 + 一行说明，按分类分节。
+    // 两者的条目本身就是一档 RSS 专辑，所以播放、续播、字幕全部复用同一套链路。
+    private lateinit var shelfPanel: View
+    private lateinit var shelfTitle: TextView
+    private lateinit var shelfGrid: RecyclerView
+    private lateinit var shelfAdapter: BookAdapter
+    private lateinit var shelfMeta: TextView
+    private lateinit var shelfHint: TextView
+    /** 书架是否展开 */
+    private var shelfOpen = false
+    /** 当前书架装的是哪一类：[ChannelGroups.AUDIOBOOK] 或 [ChannelGroups.PODCAST] */
+    private var shelfKind = ChannelGroups.AUDIOBOOK
+
     /** 当前在播的那一集；为 null 说明在播视频或电台 */
     private var currentEpisode: PodcastEpisode? = null
+    /** 用户主动按 OK 暂停了：退后台再回来要尊重这个意图，不能擅自续播 */
+    private var podcastPaused = false
 
     /** 续播待跳转的位置：等播放器 READY 之后再 seek，太早会被 prepare 覆盖 */
     private var pendingSeekMs = 0L
@@ -307,6 +346,7 @@ class MainActivity : Activity() {
         groupList = findViewById(R.id.groupList)
         channelList = findViewById(R.id.channelList)
         laneTitle = findViewById(R.id.laneTitle)
+        laneHint = findViewById(R.id.laneHint)
         playerView = findViewById(R.id.playerView)
         infoBar = findViewById(R.id.infoBar)
         infoName = findViewById(R.id.infoChannelName)
@@ -325,13 +365,22 @@ class MainActivity : Activity() {
         podcastProgress = findViewById(R.id.podcastProgress)
         podcastBar = findViewById(R.id.podcastBar)
         podcastTime = findViewById(R.id.podcastTime)
+        podcastSubtitle = findViewById(R.id.podcastSubtitle)
+        podcastSubtitle.maxWidth = (resources.displayMetrics.widthPixels * 0.78f).toInt()
         episodePanel = findViewById(R.id.episodePanel)
         episodeList = findViewById(R.id.episodeList)
         episodeShowName = findViewById(R.id.episodeShowName)
         episodeShowMeta = findViewById(R.id.episodeShowMeta)
+        episodeCover = findViewById(R.id.episodeCover)
         episodeLoading = findViewById(R.id.episodeLoading)
         episodeEmpty = findViewById(R.id.episodeEmpty)
+        shelfPanel = findViewById(R.id.shelfPanel)
+        shelfTitle = findViewById(R.id.shelfTitle)
+        shelfGrid = findViewById(R.id.shelfGrid)
+        shelfMeta = findViewById(R.id.shelfMeta)
+        shelfHint = findViewById(R.id.shelfHint)
         podcastStore = PodcastStore(this)
+        transcriptStore = TranscriptStore(this)
         podcastDir = PodcastDirStore(this)
         episodeAdapter = EpisodeAdapter(
             onPlay = { ep -> panelShow?.let { playEpisode(it, ep) } },
@@ -339,6 +388,19 @@ class MainActivity : Activity() {
         )
         episodeList.layoutManager = LinearLayoutManager(this)
         episodeList.adapter = episodeAdapter
+
+        // 书架：6 列。最后一列留一点余量，封面不会被屏幕边缘切掉。
+        shelfAdapter = BookAdapter { show -> openBook(show) }
+        val grid = GridLayoutManager(this, BOOK_COLUMNS)
+        // 分类标题占满整行，封面卡片各占一格——分节就是靠这个撑出「一条横带」的
+        grid.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+            override fun getSpanSize(position: Int): Int =
+                if (shelfAdapter.isHeader(position)) BOOK_COLUMNS else 1
+        }
+        shelfGrid.layoutManager = grid
+        shelfGrid.adapter = shelfAdapter
+        // 一次性铺开，进出书架不需要逐项动画（老电视上反而会卡一下）
+        shelfGrid.itemAnimator = null
 
         groupAdapter = GroupAdapter { index ->
             if (justLaunched()) return@GroupAdapter
@@ -428,6 +490,11 @@ class MainActivity : Activity() {
         channelAdapter.submit(bucket.channels, store.favorites)
         pendingChannelPos = -1
         laneTitle.text = "${bucket.name} · ${bucket.channels.size}"
+        laneHint.text = when (bucket.name) {
+            ChannelGroups.AUDIOBOOK -> "OK 打开书架　→ 浏览列表　← 返回"
+            ChannelGroups.PODCAST -> "OK 打开书架　↑↓ 直接选档　← 返回\n长按 OK 收藏　菜单 设置"
+            else -> "↑↓ 选择　OK 播放　← 返回\n长按 OK 收藏　菜单 设置"
+        }
         // 若当前播放台属于该组，滚到它
         val pos = channelAdapter.positionOf(currentChannel?.name ?: "")
         if (pos >= 0) channelList.scrollToPosition(pos)
@@ -676,7 +743,7 @@ class MainActivity : Activity() {
                 // 播客节目单：内置清单 + GitHub 上的远端目录（启动时合并）。
                 // 一档节目就是列表里的一行，分集等打开面板再拉。
                 // 它排在视频源之后，且切台序列里会被排除，所以不影响原有频道顺序与切台。
-                allChannels = loaded + PodcastCatalog.shows.map { PodcastCatalog.asChannel(it) }
+                allChannels = loaded + catalogChannels()
                 if (allChannels.isEmpty()) {
                     errorHint.visibility = View.VISIBLE
                     errorHint.text = "频道列表为空，按菜单键检查播放源"
@@ -740,9 +807,16 @@ class MainActivity : Activity() {
      */
     private fun onPodcastCatalogChanged() {
         val video = allChannels.filter { !it.isPodcast }
-        allChannels = video + PodcastCatalog.shows.map { PodcastCatalog.asChannel(it) }
-        Log.i("XiaoHeiTV", "podcastCatalog 更新：${PodcastCatalog.shows.size} 档")
+        allChannels = video + catalogChannels()
+        Log.i("XiaoHeiTV", "podcastCatalog 更新：${PodcastCatalog.shows.size} 档播客 / ${AudiobookCatalog.books.size} 本书")
+        reflowKeepingFocus()
+    }
 
+    /**
+     * 重排列表但不动用户的位置：分组留在原地，焦点原来停在哪个频道就还回哪个
+     * （那个频道没了才退回当前在播的台）。正在播的流不会被打断。
+     */
+    private fun reflowKeepingFocus() {
         val keepGroup = groupIndex
         val focusName = if (!focusInGroups && !panelOpen) {
             channelList.focusedChild?.let { channelList.getChildAdapterPosition(it) }
@@ -1242,9 +1316,11 @@ class MainActivity : Activity() {
      *
      * 看电视时只循环视频台，听广播时只循环电台：按一下 ↓ 不会从电视掉进
      * 黑屏有声的广播，听广播时也不会偷偷预播两路视频。
+     *
      */
     private fun zapChannels(): List<Channel> {
-        val all = groups.flatMap { it.channels }.distinctBy { "${it.isAudio}:${it.name}" }
+        val all = groups.flatMap { it.channels }
+            .distinctBy { "${it.isAudio}:${it.name}" }
         if (all.isEmpty()) return emptyList()
         return ChannelGroups.zapList(all, currentChannel?.isAudio == true)
     }
@@ -1522,7 +1598,10 @@ class MainActivity : Activity() {
     }
 
     private fun lineLabel(ch: Channel): String = when {
-        // 播客没有「线路」，只有「这一档一共多少集」
+        // 播客/有声书没有「线路」，只有「这一档一共多少集（章）」
+        ch.isPodcast && isAudiobook(ch) ->
+            if (currentEpisode != null && panelEpisodes.isNotEmpty()) "有声书 · 共 ${panelEpisodes.size} 章"
+            else "有声书 · 点播"
         ch.isPodcast -> if (currentEpisode != null && panelEpisodes.isNotEmpty()) {
             "播客 · 共 ${panelEpisodes.size} 集"
         } else {
@@ -1566,14 +1645,28 @@ class MainActivity : Activity() {
         if (audio) {
             val ep = currentEpisode
             val podcast = ch.isPodcast && ep != null
-            radioKicker.text = if (podcast) "播客 · 正在播放" else "网络电台 · 正在播放"
+            val book = podcast && isAudiobook(ch)
+            radioKicker.text = when {
+                book -> "有声书 · 正在播放"
+                podcast -> "播客 · 正在播放"
+                else -> "网络电台 · 正在播放"
+            }
             if (podcast) {
-                // 分集标题普遍很长：小一号、最多两行、限宽，避免横穿整个屏幕
-                radioName.text = ep!!.title
-                radioName.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 24f)
-                radioName.maxLines = 2
-                radioName.ellipsize = android.text.TextUtils.TruncateAt.END
-                radioName.maxWidth = (resources.displayMetrics.widthPixels * 0.62f).toInt()
+                if (book) {
+                    // 听书时屏幕中间放书名：章节名下面单独一行，两者都不至于挤成两行半
+                    radioName.text = ch.name
+                    radioName.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 30f)
+                    radioName.maxLines = 1
+                    radioName.ellipsize = android.text.TextUtils.TruncateAt.END
+                    radioName.maxWidth = (resources.displayMetrics.widthPixels * 0.62f).toInt()
+                } else {
+                    // 分集标题普遍很长：小一号、最多两行、限宽，避免横穿整个屏幕
+                    radioName.text = ep!!.title
+                    radioName.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 24f)
+                    radioName.maxLines = 2
+                    radioName.ellipsize = android.text.TextUtils.TruncateAt.END
+                    radioName.maxWidth = (resources.displayMetrics.widthPixels * 0.62f).toInt()
+                }
                 podcastProgress.visibility = View.VISIBLE
                 updatePodcastProgress()
             } else {
@@ -1583,6 +1676,9 @@ class MainActivity : Activity() {
                 radioName.ellipsize = null
                 radioName.maxWidth = Int.MAX_VALUE
                 podcastProgress.visibility = View.GONE
+                // 从播客切到普通电台：字幕和上一集一起退场
+                transcriptSeq++
+                clearSubtitle()
             }
             // 换台换配色，同一个台永远同一套
             radioBackdrop.setStation(ch.name)
@@ -1591,8 +1687,14 @@ class MainActivity : Activity() {
             nowPlayingTitle = null
             handler.removeCallbacks(nowPlayingFallback)
             if (podcast) {
-                // 播客的标题上面已经写了这一集的名字，这行留着只是占位
-                radioNowPlaying.visibility = View.GONE
+                if (book) {
+                    // 书：中间是书名，这行正好放「第几回」，听长书时很有用
+                    radioNowPlaying.text = ep!!.title
+                    radioNowPlaying.visibility = View.VISIBLE
+                } else {
+                    // 播客的标题上面已经写了这一集的名字，这行留着只是占位
+                    radioNowPlaying.visibility = View.GONE
+                }
             } else {
                 radioNowPlaying.text = ""
                 // 占位而不是 GONE：曲目一到就填字，布局不会跟着跳一下
@@ -1711,6 +1813,148 @@ class MainActivity : Activity() {
         }, 60)
     }
 
+    // ---------------------------------------------------------------- 有声书
+
+    /** 播客与有声书都是点播内容：统一排在视频源之后，切台序列里会被排除 */
+    private fun catalogChannels(): List<Channel> =
+        PodcastCatalog.shows.map { PodcastCatalog.asChannel(it) } +
+            AudiobookCatalog.books.map { AudiobookCatalog.asChannel(it) }
+
+    /** 这本书（频道行）是不是有声书 */
+    private fun isAudiobook(ch: Channel?): Boolean =
+        ch != null && ch.group == ChannelGroups.AUDIOBOOK
+
+    /**
+     * 打开书架。
+     *
+     * 有声书和播客共用这一层：都是「一档 RSS 专辑 = 一个封面」，
+     * 区别只在数据源与文案，所以合成一个入口，靠 [kind] 分。
+     * 书架是全屏的一层，和分集面板同级：右栏只有屏宽 1/3，摆不下封面墙。
+     * 记住刚才在听的是哪一档，焦点直接落在它上面。
+     */
+    private fun openShelf(kind: String = ChannelGroups.AUDIOBOOK) {
+        if (destroyed || shelfOpen) return
+        shelfOpen = true
+        shelfKind = kind
+        setListPanelVisible(false)
+        handler.removeCallbacks(hideInfo)
+        infoBar.visibility = View.GONE
+        shelfPanel.visibility = View.VISIBLE
+
+        val isBook = kind == ChannelGroups.AUDIOBOOK
+        val playing = currentChannel?.takeIf {
+            if (isBook) isAudiobook(it) else it.isPodcast && !isAudiobook(it)
+        }?.name
+
+        if (isBook) {
+            shelfTitle.text = "有声书"
+            shelfAdapter.submitSections(
+                sectionsOf(AudiobookCatalog.CATEGORIES, AudiobookCatalog.shelf),
+                playing
+            ) { it.author }
+            shelfMeta.text = "${AudiobookCatalog.shelf.size} 本 · " +
+                AudiobookCatalog.CATEGORIES.joinToString(" · ")
+            shelfHint.text = "↑↓←→ 选书　OK 打开章节目录　返回键 回分组"
+        } else {
+            shelfTitle.text = "播客"
+            shelfAdapter.submitSections(
+                sectionsOf(PodcastCatalog.CATEGORIES, PodcastCatalog.shelf),
+                playing
+            ) { it.author }
+            shelfMeta.text = "${PodcastCatalog.shelf.size} 档 · " +
+                PodcastCatalog.CATEGORIES.joinToString(" · ")
+            shelfHint.text = "↑↓←→ 选节目　OK 查看分集　返回键 回分组"
+        }
+        val idx = (if (playing != null) shelfAdapter.positionOf(playing) else -1).coerceAtLeast(0)
+        focusBookAt(idx)
+    }
+
+    /**
+     * 把清单按分类切成「分节」。
+     *
+     * 分类顺序按传入的固定表，不按字符串排（中文按 Unicode 排出来是乱的）；
+     * 远端目录里没写分类或写了个不认识的，统一落到最后一节「其他」，一档都不丢。
+     */
+    private fun sectionsOf(
+        categories: List<String>,
+        items: List<PodcastShow>
+    ): List<Pair<String, List<PodcastShow>>> {
+        val byCategory = items.groupBy { it.category }
+        val ordered = categories.map { it to byCategory[it].orEmpty() } +
+            ("其他" to items.filter { it.category !in categories })
+        return ordered.filter { it.second.isNotEmpty() }
+    }
+
+    /** 关掉书架：回到打开它的那个分组（有声书 / 播客） */
+    private fun closeShelf() {
+        if (!shelfOpen) return
+        val kind = shelfKind
+        shelfOpen = false
+        shelfPanel.visibility = View.GONE
+        applyFullscreen(false, persist = false)
+        val gi = groups.indexOfFirst { it.name == kind }
+        if (gi >= 0) {
+            selectGroup(gi)
+            backToGroups()
+        }
+    }
+
+    private fun focusBookAt(index: Int) {
+        // 分类标题不可聚焦：要落的位置正好是个标题，就往下挪到本节第一张卡片
+        var i = index.coerceAtLeast(0)
+        while (i < shelfAdapter.size() && shelfAdapter.isHeader(i)) i++
+        if (i >= shelfAdapter.size()) return
+        val target = i
+        // 直接滚到卡片会把上一行的分类标题顶出屏幕，打开书架第一眼就看不到「故事纪实」这类分段。
+        // 上面紧挨着标题时，按标题对齐，标题连同卡片一起露出来。
+        if (i - 1 >= 0 && shelfAdapter.isHeader(i - 1)) {
+            (shelfGrid.layoutManager as? GridLayoutManager)
+                ?.scrollToPositionWithOffset(i - 1, 0)
+                ?: shelfGrid.scrollToPosition(target)
+        } else {
+            shelfGrid.scrollToPosition(target)
+        }
+        // 书架刚从 GONE 变 VISIBLE，同一帧里还没有 ViewHolder，直接 requestFocus 会落空。
+        // 这里重试几轮，最坏退回「把焦点给网格」——至少方向键还能用。
+        var tries = 0
+        val task = object : Runnable {
+            override fun run() {
+                if (destroyed || !shelfOpen || panelOpen) return
+                val view = shelfGrid.findViewHolderForAdapterPosition(target)?.itemView
+                if (view != null && view.requestFocus()) return
+                if (++tries >= 6) {
+                    shelfGrid.requestFocus()
+                    return
+                }
+                handler.postDelayed(this, 50L)
+            }
+        }
+        handler.postDelayed(task, 30L)
+    }
+
+    private fun bookFocusPosition(): Int {
+        val focused = shelfGrid.focusedChild ?: return -1
+        return shelfGrid.getChildAdapterPosition(focused)
+    }
+
+    private fun openFocusedBook() {
+        val pos = bookFocusPosition()
+        // 焦点理论上不会停在分类标题上（它不可聚焦），保险还是兜一层：跳过标题找第一档
+        val show = shelfAdapter.itemAt(if (pos >= 0) pos else 0)
+            ?: shelfAdapter.firstBook()
+            ?: return
+        openBook(show)
+    }
+
+    private fun openBook(show: PodcastShow) {
+        val kind = shelfKind
+        // 只在自己这一层里找：书和播客可能有同名条目，跨层取会打开错的东西
+        val ch = allChannels.firstOrNull { it.isPodcast && it.group == kind && it.name == show.name }
+            ?: if (kind == ChannelGroups.PODCAST) PodcastCatalog.asChannel(show)
+            else AudiobookCatalog.asChannel(show)
+        openEpisodePanel(ch)
+    }
+
     // ---------------------------------------------------------------- 播客
 
     /**
@@ -1722,6 +1966,8 @@ class MainActivity : Activity() {
     private fun openEpisodePanel(ch: Channel) {
         if (destroyed) return
         val show = PodcastCatalog.byName(ch.name) ?: return
+        // 从书架点进来：返回时回书架。从两栏列表点进来：返回时回列表
+        panelFromShelf = shelfOpen
         panelShow = show
         panelOpen = true
         episodePanel.visibility = View.VISIBLE
@@ -1729,17 +1975,22 @@ class MainActivity : Activity() {
         handler.removeCallbacks(hideInfo)
         infoBar.visibility = View.GONE
         episodeShowName.text = show.name
-        episodeShowMeta.text = show.author
+        episodeShowMeta.text = showMetaText(show, 0)
+        applyEpisodeCover(show)
 
         val cached = podcastStore.memory(show.id)
         if (cached != null) {
             submitEpisodes(cached)
         } else {
             panelEpisodes = emptyList()
-            episodeAdapter.submit(emptyList(), currentEpisode?.id)
+            episodeAdapter.submit(
+                emptyList(), currentEpisode?.id,
+                book = show.isBook
+            )
             episodeEmpty.visibility = View.GONE
             episodeLoading.visibility = View.VISIBLE
-            episodeShowMeta.text = "${show.author} · 正在获取分集…"
+            episodeShowMeta.text = showMetaText(show, 0) +
+                (if (show.isBook) " · 正在获取章节…" else " · 正在获取分集…")
             loadEpisodes(show)
         }
         handler.postDelayed({
@@ -1765,17 +2016,48 @@ class MainActivity : Activity() {
     private fun submitEpisodes(list: List<PodcastEpisode>) {
         panelEpisodes = list
         episodeLoading.visibility = View.GONE
-        episodeAdapter.submit(list, currentEpisode?.id)
-        val author = panelShow?.author.orEmpty()
-        episodeShowMeta.text = if (list.isEmpty()) author else "$author · 共 ${list.size} 集"
+        episodeAdapter.submit(
+            list, currentEpisode?.id,
+            book = panelShow?.isBook == true
+        )
+        val show = panelShow
+        episodeShowMeta.text = if (show == null) "" else showMetaText(show, list.size)
         if (list.isEmpty()) {
-            episodeEmpty.text = "这一档暂时取不到分集\n检查网络后再进来试试"
+            val book = show?.isBook == true
+            episodeEmpty.text = if (book) "这本书暂时取不到章节\n检查网络后再进来试试"
+            else "这一档暂时取不到分集\n检查网络后再进来试试"
             episodeEmpty.visibility = View.VISIBLE
             return
         }
         episodeEmpty.visibility = View.GONE
         val pos = episodeAdapter.positionOf(currentEpisode?.id)
         focusEpisodeAt(if (pos >= 0) pos else 0)
+    }
+
+    /** 章节面板的副标题：书用「分类 · 播讲 · 共 N 章」，播客用「分类 · 作者 · 共 N 集」 */
+    private fun showMetaText(show: PodcastShow, count: Int): String {
+        val head = listOf(show.category, show.author).filter { it.isNotEmpty() }.joinToString(" · ")
+        val unit = if (show.isBook) "章" else "集"
+        return when {
+            count <= 0 -> head
+            head.isEmpty() -> "共 $count $unit"
+            else -> "$head · 共 $count $unit"
+        }
+    }
+
+    /** 封面只给书：播客没有封面字段，这排留 GONE，标题照旧贴着顶边 */
+    private fun applyEpisodeCover(show: PodcastShow) {
+        if (show.cover.isEmpty()) {
+            episodeCover.visibility = View.GONE
+            episodeCover.setImageDrawable(null)
+            return
+        }
+        episodeCover.visibility = View.VISIBLE
+        val radius = (resources.displayMetrics.density * 10f).toInt()
+        Glide.with(episodeCover)
+            .load(show.cover)
+            .apply(RequestOptions.bitmapTransform(RoundedCorners(radius)))
+            .into(episodeCover)
     }
 
     private fun focusEpisodeAt(index: Int) {
@@ -1789,12 +2071,24 @@ class MainActivity : Activity() {
         }, 40)
     }
 
-    /** 关掉分集面板：回到两栏列表，焦点停在刚才那一档上 */
+    /** 关掉分集面板：回书架（如果是从书架进来的），否则回两栏列表 */
     private fun closeEpisodePanel() {
         if (!panelOpen) return
         panelOpen = false
         episodePanel.visibility = View.GONE
+        if (panelFromShelf && shelfOpen) {
+            panelFromShelf = false
+            shelfPanel.visibility = View.VISIBLE
+            val idx = shelfAdapter.positionOf(panelShow?.name ?: "")
+            focusBookAt(if (idx >= 0) idx else 0)
+            return
+        }
+        panelFromShelf = false
         applyFullscreen(false, persist = false)
+        // 播客和书都可能不在当前分组里（听了一本书，列表却停在央视）：先把组切过去
+        val group = allChannels.firstOrNull { it.isPodcast && it.name == panelShow?.name }?.group
+        val gi = groups.indexOfFirst { it.name == group }
+        if (gi >= 0 && gi != groupIndex) selectGroup(gi)
         val pos = channelAdapter.positionOf(panelShow?.name ?: "")
         if (pos >= 0) {
             focusInGroups = false
@@ -1803,11 +2097,41 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * 分集面板按 OK：
+     *   焦点就在正在播的那一集 → 暂停 / 继续（不再从头播一遍）
+     *   焦点在别的集         → 起播那一集
+     */
     private fun playFocusedEpisode() {
         val show = panelShow ?: return
         val pos = episodeList.focusedChild?.let { episodeList.getChildAdapterPosition(it) } ?: -1
         val ep = episodeAdapter.itemAt(if (pos >= 0) pos else 0) ?: return
-        playEpisode(show, ep)
+        if (ep.id == currentEpisode?.id && panelShow?.name == currentChannel?.name) {
+            togglePodcastPlayback()
+        } else {
+            playEpisode(show, ep)
+        }
+    }
+
+    /** 播客播放 / 暂停：只翻 playWhenReady，不重建播放器，进度和字幕原地停住 */
+    private fun togglePodcastPlayback() {
+        val p = player
+        if (p == null || currentEpisode == null) return
+        // IDLE（比如刚从后台回来还没起播）时 playWhenReady 翻了也没用，重新起播
+        if (p.playbackState == Player.STATE_IDLE) {
+            val ch = currentChannel ?: return
+            val ep = currentEpisode ?: return
+            val show = PodcastCatalog.byName(ch.name) ?: return
+            playEpisode(show, ep)
+            return
+        }
+        val play = !p.playWhenReady
+        podcastPaused = !play
+        runCatching { p.playWhenReady = play }
+        episodeAdapter.setPlaying(currentEpisode?.id, paused = !play)
+        updatePodcastProgress()
+        if (!play) savePodcastPosition()
+        showInfo()
     }
 
     /**
@@ -1827,6 +2151,7 @@ class MainActivity : Activity() {
         if (currentEpisode != null) savePodcastPosition()
         currentChannel = ch
         currentEpisode = ep
+        podcastPaused = false
         radioMode = true
         autoTries = 0
         playStartedAt = SystemClock.uptimeMillis()
@@ -1836,6 +2161,10 @@ class MainActivity : Activity() {
         errorHint.visibility = View.GONE
         panelOpen = false
         episodePanel.visibility = View.GONE
+        // 开始播放就退出书架/章节这两层：全屏看的是播放页，书架留在后面会挡住画面
+        panelFromShelf = false
+        shelfOpen = false
+        shelfPanel.visibility = View.GONE
         infoMeta.text = lineLabel(ch)
         applyFullscreen(true, persist = true)
         applyRadioUi(ch)
@@ -1847,6 +2176,43 @@ class MainActivity : Activity() {
         episodeAdapter.setPlaying(ep.id)
         playDirect(ch, ep.url)
         schedulePodcastTick()
+        loadTranscript(ep)
+    }
+
+    /**
+     * 字幕加载：下载 VTT 可能要几百毫秒，绝不能卡住起播。
+     * 先清掉上一集的字幕，加载完再按当前播放位置立即对上一句。
+     */
+    private fun loadTranscript(ep: PodcastEpisode) {
+        val seq = ++transcriptSeq
+        clearSubtitle()
+        val url = ep.transcriptUrl
+        if (url.isEmpty()) return
+        Thread {
+            val cues = runCatching { transcriptStore.cues(url) }.getOrDefault(emptyList())
+            handler.post {
+                if (destroyed || seq != transcriptSeq || currentEpisode?.id != ep.id) return@post
+                activeCues = cues
+                if (cues.isEmpty()) clearSubtitle() else updateSubtitle(player?.currentPosition ?: 0L)
+            }
+        }.start()
+    }
+
+    /** 每一秒的进度刷新顺带对一句字幕；快进、续播 seek 后也会立刻走到这里 */
+    private fun updateSubtitle(posMs: Long) {
+        val cue = PodcastTranscript.cueAt(activeCues, posMs)
+        if (cue == null || !radioMode) {
+            podcastSubtitle.visibility = View.GONE
+            return
+        }
+        if (podcastSubtitle.text.toString() != cue.text) podcastSubtitle.text = cue.text
+        podcastSubtitle.visibility = View.VISIBLE
+    }
+
+    private fun clearSubtitle() {
+        activeCues = emptyList()
+        podcastSubtitle.text = ""
+        podcastSubtitle.visibility = View.GONE
     }
 
     /** 全屏上下键：上一集 / 下一集 */
@@ -1882,7 +2248,8 @@ class MainActivity : Activity() {
         val dur = p.duration.takeIf { it > 0L } ?: ep.durationMs
         podcastBar.progress = if (dur > 0L) ((pos * 1000) / dur).toInt().coerceIn(0, 1000) else 0
         podcastTime.text = fmtTime(pos) + " / " + (if (dur > 0L) fmtTime(dur) else "--:--") +
-            "　← → 前后 15 秒"
+            if (p.playWhenReady) "　← → 前后 15 秒" else "　已暂停 · OK 继续"
+        updateSubtitle(pos)
     }
 
     private val podcastTick = object : Runnable {
@@ -1904,6 +2271,8 @@ class MainActivity : Activity() {
 
     private fun stopPodcastTick() {
         handler.removeCallbacks(podcastTick)
+        transcriptSeq++
+        clearSubtitle()
         savePodcastPosition()
     }
 
@@ -1925,18 +2294,26 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------------- 按键
 
     private fun handleOkShort() {
+        // 书架里 OK＝打开这本书的章节目录
+        if (shelfOpen) {
+            openFocusedBook()
+            return
+        }
         if (fullscreen) {
-            // 播客全屏按 OK＝回到这一档的分集（点播的心智是「退一层」，不是「看频道表」）
-            val show = currentChannel
-            if (currentEpisode != null && show != null) {
-                openEpisodePanel(show)
+            // 播客全屏按 OK＝播放 / 暂停（和遥控器上的播放键一个心智）；
+            // 想回分集用返回键，逐层退出更稳，不会在「暂停」和「回列表」之间反复横跳
+            if (currentEpisode != null) {
+                togglePodcastPlayback()
                 return
             }
             showListOnCurrentChannel()
             return
         }
         if (focusInGroups) {
-            enterChannels()
+            // 停在「有声书」/「播客」上按 OK：直接铺开封面墙（右栏太窄，摆不下书架）
+            val g = groups.getOrNull(groupIndex)?.name
+            if (g == ChannelGroups.AUDIOBOOK || g == ChannelGroups.PODCAST) openShelf(g)
+            else enterChannels()
             return
         }
         val ch = focusedChannel() ?: return
@@ -1972,6 +2349,38 @@ class MainActivity : Activity() {
                 }
                 KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN ->
                     return super.dispatchKeyEvent(event)
+                else -> return true
+            }
+        }
+
+        // ---- 书架：四向键交给网格自己挪焦点，返回键退出 ----
+        if (shelfOpen) {
+            if (isOk) {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) openFocusedBook()
+                return true
+            }
+            when (code) {
+                KeyEvent.KEYCODE_BACK -> {
+                    if (event.action == KeyEvent.ACTION_DOWN) closeShelf()
+                    return true
+                }
+                KeyEvent.KEYCODE_MENU -> {
+                    if (event.action == KeyEvent.ACTION_DOWN) openSettings()
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    // 已经在最左一列：再按左就退出书架，和列表里「左键收起」一致
+                    if (event.action == KeyEvent.ACTION_DOWN) {
+                        val pos = bookFocusPosition()
+                        if (pos < 0 || pos % BOOK_COLUMNS == 0) {
+                            closeShelf()
+                            return true
+                        }
+                    }
+                    return super.dispatchKeyEvent(event)
+                }
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_RIGHT -> return super.dispatchKeyEvent(event)
                 else -> return true
             }
         }
@@ -2074,7 +2483,8 @@ class MainActivity : Activity() {
                     showListOnCurrentChannel()
                     return true
                 }
-                // 右键＝展开：从分组栏进入右栏
+                // 右键＝展开：从分组栏进入右栏（有声书进的是「一本一行」的列表，
+                // 想看书架墙就按 OK——两条路都能到章节目录，谁快用谁）
                 if (focusInGroups) enterChannels()
                 return true
             }
@@ -2172,10 +2582,15 @@ class MainActivity : Activity() {
             if (player?.playbackState == Player.STATE_IDLE) {
                 pendingSeekMs = store.podcastPosition(ep.id)
                 playDirect(ch, ep.url)
-            } else {
+                // playDirect 会置 playWhenReady=true；用户暂停过的要立刻按回去
+                if (podcastPaused) runCatching { player?.playWhenReady = false }
+            } else if (!podcastPaused) {
                 runCatching { player?.playWhenReady = true }
             }
+            episodeAdapter.setPlaying(ep.id, paused = podcastPaused)
             schedulePodcastTick()
+            // 退后台时字幕被清掉了；回来重新挂上（VTT 已在内存/磁盘，命中极快）
+            loadTranscript(ep)
         } else if (ch != null && ch.urls.isNotEmpty() && player?.playbackState == Player.STATE_IDLE) {
             buildLineOrder(ch)
             val url = ch.urls.getOrElse(urlIndex) { "" }
@@ -2212,6 +2627,9 @@ class MainActivity : Activity() {
     private fun prebufferTimeoutMs(): Long = if (conservative) 2_800L else PREBUFFER_TIMEOUT_MS
 
     private companion object {
+        /** 书架列数：6 列刚好把 15 本书排成三行，一屏能看全 */
+        const val BOOK_COLUMNS = 6
+
         /** 10s：等这么久还没有曲目，就当这个台不发元数据 */
         const val NOW_PLAYING_WAIT_MS = 10_000L
 

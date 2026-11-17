@@ -115,6 +115,27 @@
                     tools:text="12:31 / 45:02　← → 快退 / 快进 15 秒" />
             </LinearLayout>
         </LinearLayout>
+
+        <!-- 字幕只属于播客播放页：贴在屏幕下方，不抢中间标题和进度条的位置。
+             没有字幕轨、或两句之间空档时整个 View 隐藏，绝不留一个空框。 -->
+        <TextView
+            android:id="@+id/podcastSubtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="120dp"
+            android:background="@drawable/podcast_subtitle_bg"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="3"
+            android:shadowColor="#CC000000"
+            android:shadowDy="2"
+            android:shadowRadius="6"
+            android:textColor="@color/text_primary"
+            android:textSize="20sp"
+            android:visibility="gone"
+            tools:text="本节目由津津乐道制作播出。"
+            tools:visibility="visible" />
     </FrameLayout>
 
     <!--
@@ -319,6 +340,67 @@
     </LinearLayout>
 
     <!--
+      有声书书架：封面墙，盖满全屏。
+      书是「先看封面挑一本，再翻章节目录」的心智，跟电视直播一路按下去完全不同，
+      所以和分集面板一样单独一层，不挤在两栏列表里——右栏只有屏宽 1/3，放不下封面。
+    -->
+    <LinearLayout
+        android:id="@+id/shelfPanel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/bg_main"
+        android:orientation="vertical"
+        android:paddingStart="56dp"
+        android:paddingTop="40dp"
+        android:paddingEnd="56dp"
+        android:paddingBottom="22dp"
+        android:visibility="gone"
+        tools:visibility="gone">
+
+        <TextView
+            android:id="@+id/shelfTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.02"
+            android:text="有声书"
+            android:textColor="@color/text_primary"
+            android:textSize="24sp" />
+
+        <TextView
+            android:id="@+id/shelfMeta"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text_tertiary"
+            android:textSize="12sp"
+            tools:text="15 本 · 古典小说 · 童话寓言 · 诗词国学 · 历史故事" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/shelfGrid"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="16dp"
+            android:layout_weight="1"
+            android:clipChildren="false"
+            android:clipToPadding="false"
+            android:paddingBottom="10dp"
+            tools:listitem="@layout/item_book" />
+
+        <TextView
+            android:id="@+id/shelfHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:letterSpacing="0.02"
+            android:paddingTop="8dp"
+            android:text="↑↓←→ 选书　OK 打开章节目录　返回键 回分组"
+            android:textColor="@color/text_secondary"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!--
       播客分集面板：盖满全屏的点播列表。
       只看得到一档节目的分集，按返回回到两栏列表——播客是「先选节目、再选集」，
       和电视直播「一路按下去」的心智不一样，所以单独一层，不塞进右栏。
@@ -336,28 +418,53 @@
         android:visibility="gone"
         tools:visibility="visible">
 
-        <TextView
-            android:id="@+id/episodeShowName"
-            android:layout_width="wrap_content"
+        <!-- 有声书才用封面：播客不占这块位置，标题直接就是面板的第一行 -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:fontFamily="sans-serif-medium"
-            android:letterSpacing="0.02"
-            android:maxLines="1"
-            android:textColor="@color/text_primary"
-            android:textSize="24sp"
-            tools:text="故事FM" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <TextView
-            android:id="@+id/episodeShowMeta"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="@color/text_tertiary"
-            android:textSize="12sp"
-            tools:text="故事 FM · 共 40 集" />
+            <ImageView
+                android:id="@+id/episodeCover"
+                android:layout_width="68dp"
+                android:layout_height="68dp"
+                android:layout_marginEnd="16dp"
+                android:contentDescription="封面"
+                android:scaleType="centerCrop"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/episodeShowName"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:fontFamily="sans-serif-medium"
+                    android:letterSpacing="0.02"
+                    android:maxLines="1"
+                    android:textColor="@color/text_primary"
+                    android:textSize="24sp"
+                    tools:text="故事FM" />
+
+                <TextView
+                    android:id="@+id/episodeShowMeta"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@color/text_tertiary"
+                    android:textSize="12sp"
+                    tools:text="故事 FM · 共 40 集" />
+            </LinearLayout>
+        </LinearLayout>
 
         <FrameLayout
             android:layout_width="match_parent"
@@ -405,7 +512,7 @@
             android:layout_height="wrap_content"
             android:letterSpacing="0.02"
             android:paddingTop="10dp"
-            android:text="↑↓ 选择　OK 播放　← 返回"
+            android:text="↑↓ 选择　OK 播放 / 暂停　← 返回"
             android:textColor="@color/text_secondary"
             android:textSize="11sp" />
     </LinearLayout>

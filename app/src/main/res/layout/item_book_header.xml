@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  书架里的分类标题行：占满一整行（SpanSize = 列数），把封面墙分段。
+  左边一小段 accent 竖条，和整体的玻璃/暗色风格对齐，不用大色块抢封面的戏。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:focusable="false"
+    android:focusableInTouchMode="false"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="6dp"
+    android:paddingTop="18dp"
+    android:paddingEnd="6dp"
+    android:paddingBottom="2dp">
+
+    <View
+        android:layout_width="3dp"
+        android:layout_height="14dp"
+        android:background="@color/accent" />
+
+    <TextView
+        android:id="@+id/sectionTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:fontFamily="sans-serif-medium"
+        android:letterSpacing="0.04"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp"
+        tools:text="古典小说" />
+
+    <TextView
+        android:id="@+id/sectionCount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:textColor="@color/text_tertiary"
+        android:textSize="11sp"
+        tools:text="5" />
+</LinearLayout>

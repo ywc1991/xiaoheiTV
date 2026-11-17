@@ -19,151 +19,212 @@ import com.xiaohei.tv.model.PodcastShow
  */
 object PodcastCatalog {
 
+    /** 分类的固定展示顺序：书架按这个顺序分节，节内保持 [builtin] 里手写的位置 */
+    val CATEGORIES = listOf("故事纪实", "人文对谈", "科技数码", "商业观察", "轻松闲聊")
+
     val builtin: List<PodcastShow> = listOf(
         PodcastShow(
             "storyfm", "故事FM", "故事 FM",
             "https://feeds.storyfm.cn/storyfm.xml",
-            "亲历者口述的真实故事"
+            "亲历者口述的真实故事",
+            cover = "https://media-one.wavpub.com/covers/1ebcbf5d-9dd2-4b69-b681-b54c22541cf2/977035cf6ab63b6e.png",
+            category = "故事纪实"
         ),
         PodcastShow(
             "huzuohuyou", "忽左忽右", "JustPod",
             "https://feed.xyzfm.space/cv4bkgpuglwp",
-            "一档关于历史、社会与思想的对谈节目"
+            "一档关于历史、社会与思想的对谈节目",
+            cover = "https://image.xyzcdn.net/FrYMqb37Wg_LA8aenDJJ8SFGsjea",
+            category = "人文对谈"
         ),
         PodcastShow(
             "shengdongjixi", "声东击西", "ETW Studio",
             "https://feeds.fireside.fm/shengdongjixi/rss",
-            "把世界另一端的声音带到耳边"
+            "把世界另一端的声音带到耳边",
+            cover = "https://cdn.fireside.fm/file/fireside-images-2024/podcasts/images/8/8dd8a56f-9636-415a-8c00-f9ca6778e511/cover.jpg?v=4",
+            category = "人文对谈"
         ),
         PodcastShow(
             "daneimitan", "大内密谈", "大内密谈",
             "https://rss.lizhi.fm/rss/14275.xml",
-            "生活方式与脑洞漫谈"
+            "生活方式与脑洞漫谈",
+            cover = "https://cdn.lizhi.fm/podcast_cover/2018/12/10/2708425912842789447_600x600.jpg",
+            category = "轻松闲聊"
         ),
         PodcastShow(
             "wenhuayouxian", "文化有限", "文化有限",
             "https://s1.proxy.wavpub.com/weknownothing.xml",
-            "三个爱读书的人聊书"
+            "三个爱读书的人聊书",
+            cover = "https://fdfs.xmcdn.com/group86/M09/93/15/wKg5Jl7oVC7jwzOyAAKPBjf4fAA078.jpg",
+            category = "人文对谈"
         ),
         PodcastShow(
             "bowuzhi", "博物志", "小黄鱼播客",
             "https://bowuzhi.typlog.io/feed/audio.xml",
-            "博物馆、展览与文物里的细节"
+            "博物馆、展览与文物里的细节",
+            cover = "https://i.typlog.com/bowuzhi/8265386531_995896.png?x-oss-process=style/sl",
+            category = "人文对谈"
         ),
         PodcastShow(
             "liangyongan", "梁永安的播客", "梁永安",
             "https://feed.xyzfm.space/tbalbybjc3ev",
-            "复旦教授聊文学与年轻人的处境"
+            "复旦教授聊文学与年轻人的处境",
+            cover = "https://image.xyzcdn.net/FvIoHGddh56FQPpqqZbG5QrDapdy.jpg",
+            category = "人文对谈"
         ),
         PodcastShow(
             "ritanwuyu", "日谈物语", "日谈公园",
             "https://feed.xyzfm.space/87x9n4x77fpy",
-            "日谈公园出品的纪实故事"
+            "日谈公园出品的纪实故事",
+            cover = "https://image.xyzcdn.net/FgKrO6z3werDYCWBPUaTKfuLcQIy.jpg",
+            category = "故事纪实"
         ),
         PodcastShow(
             "dongyaguancha", "东亚观察局", "东亚观察局",
             "https://feed.xyzfm.space/eye-on-east-asia",
-            "东亚时事与社会观察"
+            "东亚时事与社会观察",
+            cover = "https://image.xyzcdn.net/FsPm9Kh9XglTbg7Fl9vCW0mRg-Py.jpg",
+            category = "人文对谈"
         ),
         PodcastShow(
             "mianji", "面基", "面基",
             "https://feed.xyzfm.space/6hpdgggtxpxb",
-            "和各行各业的人聊聊他们怎么想"
+            "和各行各业的人聊聊他们怎么想",
+            cover = "https://image.xyzcdn.net/Ftol1VYmqtTUXqIxdMjkt0BcBuFX.png",
+            category = "人文对谈"
         ),
         PodcastShow(
             "rizhilu", "日知录", "日谈公园",
             "https://feed.xyzfm.space/6fqtp9h4u8vm",
-            "日常里那些值得记下来的知识"
+            "日常里那些值得记下来的知识",
+            cover = "https://image.xyzcdn.net/FrVOB3d78sC3V8__zqDOyDDogh2P",
+            category = "人文对谈"
         ),
         PodcastShow(
             "kernelpanic", "内核恐慌", "吴涛、Rio",
             "https://pan.icu/feed",
-            "号称硬核却没什么干货的信息技术闲聊"
+            "号称硬核却没什么干货的信息技术闲聊",
+            cover = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts115/v4/42/29/85/422985a5-7649-67e9-bb86-16e69db62528/mza_17711615031769451067.png/1000x1000bb.jpg",
+            category = "科技数码"
         ),
         PodcastShow(
             "pythonhunter", "捕蛇者说", "pythonhunter",
             "https://pythonhunter.org/feed",
-            "几个写 Python 的人聊技术与职业"
+            "几个写 Python 的人聊技术与职业",
+            cover = "https://i.typlog.com/pythonhunter/8444779951_186779.png",
+            category = "科技数码"
         ),
         PodcastShow(
             "anywayfm", "Anyway.FM", "JJ Ying & Leon Gao",
             "https://anyway.fm/rss.xml",
-            "两位设计师聊视觉设计"
+            "两位设计师聊视觉设计",
+            cover = "https://s.anyway.red/images/cover-new.png",
+            category = "科技数码"
         ),
         PodcastShow(
             "buheshiyi", "不合时宜", "不合时宜",
             "https://feed.xyzfm.space/ww7cqnybekty",
-            "青年视角看世界，时事与文化对谈"
+            "青年视角看世界，时事与文化对谈",
+            cover = "https://image.xyzcdn.net/Fq-ccfNzhgTqQNzlG-1qA_jOow7l.png",
+            category = "人文对谈"
         ),
         PodcastShow(
             "guigu101", "硅谷101", "硅谷101",
             "https://feeds.fireside.fm/sv101/rss",
-            "硅谷科技、创投与华人故事"
+            "硅谷科技、创投与华人故事",
+            cover = "https://cdn.fireside.fm/file/fireside-images-2024/podcasts/images/f/f0f20376-8faf-4940-b920-84af6c734e2d/cover.jpg?v=6",
+            category = "商业观察"
         ),
         PodcastShow(
             "zhangxiaojun", "张小珺商业访谈录", "张小珺",
             "https://feed.xyzfm.space/dk4yh3pkpjp3",
-            "和商业关键人物深度对谈"
+            "和商业关键人物深度对谈",
+            cover = "https://image.xyzcdn.net/Fnuyt9PQDQx0I0wlErG3ZHcW9Gpu.png",
+            category = "商业观察"
         ),
         PodcastShow(
             "wandian", "晚点聊", "晚点LatePost",
             "https://feeds.fireside.fm/latetalk/rss",
-            "晚点团队对话创业者与投资人"
+            "晚点团队对话创业者与投资人",
+            cover = "https://cdn.fireside.fm/file/fireside-images-2024/podcasts/images/1/19a49f52-28ee-4e25-b8e9-4f0ee70917e0/cover.jpg?v=7",
+            category = "商业观察"
         ),
         PodcastShow(
             "zhangjing42", "42章经", "42章经",
             "https://feed.xyzfm.space/evgg6xle9rdc",
-            "创业、投资与商业观察"
+            "创业、投资与商业观察",
+            cover = "https://image.xyzcdn.net/FiZZKf2-OlC5ZFzM8VLLmtz4P0ie.png",
+            category = "商业观察"
         ),
         PodcastShow(
             "kejizaozhidao", "科技早知道", "声动",
             "https://feeds.fireside.fm/guiguzaozhidao/rss",
-            "全球科技资讯与趋势解读"
+            "全球科技资讯与趋势解读",
+            cover = "https://cdn.fireside.fm/file/fireside-images-2024/podcasts/images/4/4931937e-0184-4c61-a658-6b03c254754d/cover.jpg?v=10",
+            category = "科技数码"
         ),
         PodcastShow(
             "kejiluandun", "科技乱炖", "科技乱炖",
             "https://feeds.daopub.com/ld.xml",
-            "科技热点与业界八卦漫谈"
+            "科技热点与业界八卦漫谈",
+            cover = "https://media-one.wavpub.com/covers/7008bf9f-6510-4c43-b035-078e1bfabfff/fa390d6c7c1ac5c9.png",
+            category = "科技数码"
         ),
         PodcastShow(
             "luanfanshu", "乱翻书", "潘乱",
             "https://feed.xyzfm.space/yxuruh3f9mc4",
-            "互联网与商业深度观察"
+            "互联网与商业深度观察",
+            cover = "https://image.xyzcdn.net/FqqQkG2Api63iYHz38DWlnFdR-1y.jpg",
+            category = "商业观察"
         ),
         PodcastShow(
             "zhixing", "知行小酒馆", "有知有行",
             "https://feed.xyzfm.space/j8yp8gxkmgqr",
-            "投资、理财与生活思考"
+            "投资、理财与生活思考",
+            cover = "https://image.xyzcdn.net/Fso6ZPHSi62eZJOLhorcqpx8TEwv.jpg",
+            category = "商业观察"
         ),
         PodcastShow(
             "bannatie", "半拿铁", "半拿铁",
             "https://proxy.wavpub.com/caffebreve.xml",
-            "商业沉浮与品牌故事"
+            "商业沉浮与品牌故事",
+            cover = "https://fdfs.xmcdn.com/storages/ac27-audiofreehighqps/71/C8/GMCoOSIHcO5qAAE-OQHg-X-n.jpeg",
+            category = "商业观察"
         ),
         PodcastShow(
             "wuliaozhai", "无聊斋", "无聊斋",
             "https://feed.xyzfm.space/njwyhpcjqn9t",
-            "喜剧演员的轻松闲聊"
+            "喜剧演员的轻松闲聊",
+            cover = "https://image.xyzcdn.net/FtKC0bGtqnMRdHf-1OK5hmMs4c-q",
+            category = "轻松闲聊"
         ),
         PodcastShow(
             "xxlth", "谐星聊天会", "谐星聊天会",
             "https://feeds.danlirencomedy.com/xxlth.xml",
-            "单口喜剧演员群聊现场"
+            "单口喜剧演员群聊现场",
+            cover = "https://media-one.wavpub.com/covers/be42b6bc-6b73-4e8f-b3b7-e1bacf3c4f3f/a6047b5e4b7a1357.jpg",
+            category = "轻松闲聊"
         ),
         PodcastShow(
             "naofangdianbo", "脑放电波", "脑放电波",
             "https://feed.xyzfm.space/wupdmt9er7nb",
-            "科学、技术与现代社会话题"
+            "科学、技术与现代社会话题",
+            cover = "https://image.xyzcdn.net/FvE6LbjcXht5T7prhU59SQNqnTdB.png",
+            category = "轻松闲聊"
         ),
         PodcastShow(
             "kanlixiang", "看理想圆桌", "看理想",
             "https://api.vistopia.com.cn/rss/program/13.xml",
-            "人文知识分子的圆桌对谈"
+            "人文知识分子的圆桌对谈",
+            cover = "https://cdn.vistopia.com.cn/1679020549051.jpg",
+            category = "人文对谈"
         ),
         PodcastShow(
             "yanzhonghuashu", "岩中花述", "岩中花述",
             "https://feed.xyzfm.space/hwen8wf69c6g",
-            "女性人物深度访谈"
+            "女性人物深度访谈",
+            cover = "https://image.xyzcdn.net/Fhcbb6JgoBoehDn8iex2HR3cbx9g",
+            category = "故事纪实"
         )
     )
 
@@ -177,6 +238,17 @@ object PodcastCatalog {
     private var active: List<PodcastShow> = builtin
 
     val shows: List<PodcastShow> get() = active
+
+    /**
+     * 书架展示顺序：按分类的固定顺序分节，节内保持节目单里的手写顺序。
+     *
+     * 和有声书一样不交给排序规则：中文按 Unicode 排出来是乱的，
+     * 而「哪档挨着哪档」本来就是编节目单时想好的。
+     * 远端目录里没写分类（或写了个没见过的）的，统一落到最后一节「未分类」，一档都不丢。
+     */
+    val shelf: List<PodcastShow>
+        get() = CATEGORIES.flatMap { c -> active.filter { it.category == c } } +
+            active.filter { it.category !in CATEGORIES }
 
     /**
      * 应用一份远端目录。[result] 为 null 表示没有可用目录，退回内置清单。
@@ -199,16 +271,19 @@ object PodcastCatalog {
      * 播客在左右两栏里就是「一档节目」这一行：
      * 没有线路表（音频地址要等打开面板才知道），所以 urls 为空，
      * 靠 isPodcast 让按键逻辑走「打开分集面板」而不是「直接起播」。
+     * logo 用专辑封面——和书架上看到的是同一张图，两处对得上才认得出是同一档。
      */
     fun asChannel(show: PodcastShow): Channel = Channel(
         name = show.name,
         group = ChannelGroups.PODCAST,
-        logo = "",
+        logo = show.cover,
         urls = emptyList(),
         isAudio = true,
         isPodcast = true,
-        subtitle = show.author
+        // 第二行显示「分类 · 作者」：右栏列表里也能一眼看出这档属于哪一类
+        subtitle = listOf(show.category, show.author).filter { it.isNotEmpty() }.joinToString(" · ")
     )
 
-    fun byName(name: String): PodcastShow? = active.firstOrNull { it.name == name }
+    fun byName(name: String): PodcastShow? =
+        active.firstOrNull { it.name == name } ?: AudiobookCatalog.byName(name)
 }
