@@ -1,18 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_main">
 
-    <!-- 播放区：铺满全屏，不可聚焦，避免抢走列表焦点 -->
+    <!-- 播放区：铺满全屏，不可聚焦，避免抢走列表焦点。
+         surface_type 用 texture_view：SurfaceView 在播放器重置时会被系统
+         直接清成黑屏，而 TextureView 会一直显示最后一帧，直到新画面到来——
+         这是「换台不黑屏」的根基。keep_content_on_player_reset 是双保险。 -->
     <androidx.media3.ui.PlayerView
         android:id="@+id/playerView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@color/bg_main"
         android:focusable="false"
-        android:focusableInTouchMode="false" />
+        android:focusableInTouchMode="false"
+        app:surface_type="texture_view"
+        app:keep_content_on_player_reset="true" />
 
     <!-- 纯音频网络电台：动态壁纸铺底，台名居中，避免一片黑屏让人以为没在播 -->
     <FrameLayout
