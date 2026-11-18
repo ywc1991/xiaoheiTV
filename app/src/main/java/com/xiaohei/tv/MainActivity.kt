@@ -204,6 +204,42 @@ class MainActivity : Activity() {
     /** 本次起播的请求时刻，用于打印「从点台到出图」的耗时 */
     private var playStartedAt = 0L
 
+    /** 首帧看门狗任务：非 null 表示正在等首帧 */
+    private var firstFrameWatchdog: Runnable? = null
+
+    /** 本轮起播上弦的时刻，用于日志里给真实耗时 */
+    private var firstFrameArmedAt = 0L
+
+    /** 主播放器本轮起播已完成的数据加载次数：0 = 连清单都没拉下来（典型死线） */
+    private var activeLoadsDone = 0
+
+    /**
+     * 最近一个**真正出过图**的台与线路。
+     *
+     * 用途只有一个：用户切到的台所有线路都失败时，回退到它继续播，
+     * 而不是把屏幕停在「全黑 + 一句提示」。电视是「打开就得有画面」的设备，
+     * 黑屏比「播着别的台 + 一行说明」糟糕得多。
+     */
+    private var lastGoodChannel: Channel? = null
+    private var lastGoodUrl: String = ""
+
+    /** 正在执行「回退到上一个能播的台」：防止两个台互相失败时来回弹 */
+    private var fallingBack = false
+
+    /**
+     * 救援时已经试过的台名。
+     *
+     * 刚启动就踩到死台时没有「上一个能播的台」可回退，只能往后找一个能播的顶上；
+     * 这里记住试过哪些，避免在几个死台之间来回打转。出图后清零。
+     */
+    private val rescueTried = HashSet<String>()
+
+    /** 提示条被「已回到 X」这类文案占用：出图时先别清，给用户 4 秒看清 */
+    private var pinnedHint = false
+
+    /** 退到后台（含被设置页盖住）的时刻：回来时据此判断要不要跳回直播点 */
+    private var pausedAt = 0L
+
     // ---------------------------------------------------------------- 预播流水线
     //
     // 单个预播播放器有个天花板：实测一条 HLS 流从零冷启动到 STATE_READY 要
@@ -962,6 +998,15 @@ class MainActivity : Activity() {
             }
         })
         p.addAnalyticsListener(object : AnalyticsListener {
+            override fun onLoadCompleted(
+                eventTime: AnalyticsListener.EventTime,
+                loadEventInfo: androidx.media3.exoplayer.source.LoadEventInfo,
+                mediaLoadData: androidx.media3.exoplayer.source.MediaLoadData
+            ) {
+                // 只统计在播的播放器：它是「这条线到底给不给数据」的唯一证据
+                if (p === player) activeLoadsDone++
+            }
+
             override fun onRenderedFirstFrame(
                 eventTime: AnalyticsListener.EventTime,
                 output: Any,
@@ -1008,6 +1053,7 @@ class MainActivity : Activity() {
             "playError ${ch.name} line[${urlIndex + 1}/${ch.urls.size}] = " +
                 "${ch.urls.getOrNull(urlIndex)} cause=${error.cause?.javaClass?.simpleName}:${error.cause?.message}"
         )
+        disarmFirstFrameWatchdog()
         // 解码器本身失败（不是网络/线路问题）说明这台机器的 MediaCodec 撑不住。
         // 连续两次就自动降到更保守的档位，不用等进程真的崩掉。
         if (isDecoderFailure(error)) {
@@ -1025,6 +1071,16 @@ class MainActivity : Activity() {
         // 记下这次坏掉的是哪条，换线后把它排到最后
         val curFailedIdx = urlIndex
         // 线路失败不再记账，直接换下一条试
+        advanceLineAfterFailure(ch, curFailedIdx)
+    }
+
+    /**
+     * 这条线坏了：排到最后、换下一条继续试；全试完就提示。
+     *
+     * 报错（[onActiveError]）与首帧超时（[onFirstFrameTimeout]）两条路共用：
+     * 「连上但不给数据」的死线不会抛错，只能靠超时这条路走到这里。
+     */
+    private fun advanceLineAfterFailure(ch: Channel, failedIdx: Int) {
         if (autoTries < ch.urls.size - 1) {
             autoTries++
             if (lineOrder.isEmpty()) buildLineOrder(ch)
@@ -1038,14 +1094,144 @@ class MainActivity : Activity() {
             orderPos = (orderPos + 1) % lineOrder.size
             urlIndex = lineOrder[orderPos]
             // 失败过的那条排到最后：下次打开这个台别再先踩一遍同一条死线
-            ch.urls.getOrNull(curFailedIdx)?.let { rememberSlowLine(ch.name, it) }
+            ch.urls.getOrNull(failedIdx)?.let { rememberSlowLine(ch.name, it) }
             playCurrentUrl()
         } else {
+            // 这个台所有线路都失败：别把屏幕停在黑屏上。
+            // 回退到最近一个真正出过图的台继续播，用提示条说明发生了什么。
+            // 这是「随时都得有画面」的最后一道兜底——电视黑屏等于坏了。
+            val back = lastGoodChannel
+            val backUrl = lastGoodUrl
+            if (!fallingBack && back != null && back.name != ch.name && backUrl.isNotEmpty()) {
+                fallingBack = true
+                back.urls.indexOf(backUrl).takeIf { it >= 0 }?.let { urlIndex = it }
+                Log.w("XiaoHeiTV", "channelDead ${ch.name} 全部线路失败 -> 回退到 ${back.name}")
+                pinnedHint = true
+                errorHint.visibility = View.VISIBLE
+                errorHint.text = "「${ch.name}」暂时无法播放，已回到 ${back.name}"
+                handler.postDelayed({
+                    if (!destroyed) {
+                        pinnedHint = false
+                        errorHint.visibility = View.GONE
+                    }
+                }, HINT_PIN_MS)
+                playChannel(back)
+                return
+            }
             errorHint.visibility = View.VISIBLE
             errorHint.text = "所有线路均无法播放：${ch.name}"
             infoMeta.text = "${ch.group} · 线路全部失败"
             cancelPrebuffer()
+            // 连「上一个能播的台」都没有（刚启动就踩到死台）：往后找一个能播的顶上。
+            // 「打开 app 就是黑屏」是最不能接受的状态，宁可给用户换一个台。
+            if (rescueToPlayable(ch)) return
         }
+    }
+
+    /**
+     * 这个台彻底播不了：按列表顺序往后找一个能播的台接上。
+     *
+     * 只在「没有可回退的上一个好台」时使用（典型场景：冷启动落在死台上）。
+     * 每个台只试一次，连试 3 个都不行就放弃并保留提示，避免无限乱跳。
+     */
+    private fun rescueToPlayable(failed: Channel): Boolean {
+        rescueTried += failed.name
+        if (rescueTried.size > 3) return false
+        val start = allChannels.indexOfFirst { it.name == failed.name }.coerceAtLeast(0)
+        // 从当前台往后找，找不到再绕回列表头
+        val ordered = allChannels.drop(start + 1) + allChannels.take(start + 1)
+        val cand = ordered.firstOrNull {
+            !it.isPodcast && it.urls.isNotEmpty() && it.name !in rescueTried
+        } ?: return false
+        Log.w("XiaoHeiTV", "rescue ${failed.name} 播不了 -> 切到 ${cand.name}")
+        pinnedHint = true
+        errorHint.visibility = View.VISIBLE
+        errorHint.text = "「${failed.name}」暂时无法播放，已切到 ${cand.name}"
+        handler.postDelayed({
+            if (!destroyed) {
+                pinnedHint = false
+                errorHint.visibility = View.GONE
+            }
+        }, HINT_PIN_MS)
+        playChannel(cand)
+        return true
+    }
+
+    // ---------------------------------------------------------------- 首帧看门狗
+
+    private fun firstFrameTimeoutMs(): Long =
+        if (NetProbe.ENABLED && NetProbe.tier() != NetProbe.Tier.FAST) FIRST_FRAME_TIMEOUT_WEAK_MS
+        else FIRST_FRAME_TIMEOUT_MS
+
+    private fun armFirstFrameWatchdog(ch: Channel) {
+        disarmFirstFrameWatchdog()
+        // 播客只有一条地址，没有「换线路」可走，交给它自己的错误提示
+        if (ch.isPodcast) return
+        activeLoadsDone = 0
+        firstFrameArmedAt = SystemClock.uptimeMillis()
+        postWatchdogCheck(MANIFEST_STALL_MS)
+    }
+
+    private fun disarmFirstFrameWatchdog() {
+        firstFrameWatchdog?.let { handler.removeCallbacks(it) }
+        firstFrameWatchdog = null
+        firstFrameArmedAt = 0L
+    }
+
+    private fun postWatchdogCheck(delayMs: Long) {
+        val task = Runnable { onFirstFrameCheck() }
+        firstFrameWatchdog = task
+        handler.postDelayed(task, delayMs.coerceAtLeast(1L))
+    }
+
+    /**
+     * 首帧看门狗，分两段判断，避免把「慢线」和「死线」混为一谈：
+     *
+     *  1. [MANIFEST_STALL_MS] 内**一个数据加载都没完成**（清单都没拉下来）：
+     *     这是「TCP 连得上、握手成功、但一个字节都不给」的死线，立刻换线，不等档位预算。
+     *     正常网络下清单 0.2~1s 就回来了，弱网也很少超过 4s。
+     *  2. 有数据但迟迟不出图：这是慢线，等满当前档位预算
+     *     （快网 6s / 中速弱网 12s）再换，避免弱网下把好线误判成死线。
+     *
+     * 这条路不走 onPlayerError——死线根本不报错，只能靠时间兜底。
+     */
+    private fun onFirstFrameCheck() {
+        if (destroyed) {
+            firstFrameWatchdog = null
+            return
+        }
+        val ch = currentChannel ?: return
+        // 已经切到别的台、或者这条线已经出过图：都不该判死
+        if (activeChannel?.name != ch.name || settledChannel == ch.name) {
+            firstFrameWatchdog = null
+            return
+        }
+        val elapsed = SystemClock.uptimeMillis() - firstFrameArmedAt
+        if (activeLoadsDone == 0 && elapsed < MANIFEST_STALL_MS + 800L) {
+            judgeDeadLine(ch, elapsed, "连接后无任何数据")
+            return
+        }
+        val budget = firstFrameTimeoutMs()
+        if (elapsed < budget) {
+            postWatchdogCheck(budget - elapsed)
+            return
+        }
+        if (activeLoadsDone == 0) judgeDeadLine(ch, elapsed, "始终无数据") else judgeDeadLine(ch, elapsed, "超时未出图")
+    }
+
+    /** 判这条线为死线：写入死线记忆（12h），换下一条继续试 */
+    private fun judgeDeadLine(ch: Channel, elapsed: Long, reason: String) {
+        firstFrameWatchdog = null
+        val url = ch.urls.getOrNull(urlIndex) ?: return
+        Log.w(
+            "XiaoHeiTV",
+            "firstFrameTimeout ${ch.name} line[${urlIndex + 1}/${ch.urls.size}] " +
+                "+${elapsed}ms $reason，判死线换线 = $url"
+        )
+        store.markDeadLine(url)
+        rememberSlowLine(ch.name, url)
+        if (goodUrlFor(ch.name) == url) forgetGoodLine(ch.name)
+        advanceLineAfterFailure(ch, urlIndex)
     }
 
     /** 区分「解码器不兼容」与「线路连不上」：前者要降档，后者只需换线路 */
@@ -1070,7 +1256,8 @@ class MainActivity : Activity() {
     private fun onActiveState(playbackState: Int) {
         if (destroyed) return
         if (playbackState == Player.STATE_READY || playbackState == Player.STATE_BUFFERING) {
-            errorHint.visibility = View.GONE
+            // 「已回到 X」这类回退说明要留几秒给用户看见，不能被出图立刻清掉
+            if (!pinnedHint) errorHint.visibility = View.GONE
         }
         if (playbackState == Player.STATE_BUFFERING) {
             // 只有「已经正常出过图之后又断粮」才算真卡顿；起播/切台那一次不算
@@ -1092,6 +1279,13 @@ class MainActivity : Activity() {
                 stutterStart = 0L
             }
             settledChannel = ch.name
+            // 出图了：首帧看门狗可以撤了
+            disarmFirstFrameWatchdog()
+            // 记住「这个台这条线真的能出图」：全线路失败时靠它回退，不让屏幕黑着
+            lastGoodChannel = ch
+            ch.urls.getOrNull(urlIndex)?.let { lastGoodUrl = it }
+            fallingBack = false
+            rescueTried.clear()
             // 换线只由报错驱动：缓冲卡顿不再计次、不再触发静默换线或备用线救援
             autoTries = 0
             // 播客续播：等播放器真 READY 再跳，太早 seek 会被 prepare 覆盖掉
@@ -1265,6 +1459,7 @@ class MainActivity : Activity() {
             errorHint.visibility = View.GONE
             playStartedAt = 0L
             handler.removeCallbacks(prebufferTimeout)
+            disarmFirstFrameWatchdog()
         }.onFailure {
             Log.w("XiaoHeiTV", "swap 失败，回退直接起播 ${it.javaClass.simpleName}")
             swapAt = 0L
@@ -1522,7 +1717,8 @@ class MainActivity : Activity() {
         store.lastChannelName = channel.name
         channelAdapter.setPlaying(channel.name)
         pendingChannelPos = -1
-        errorHint.visibility = View.GONE
+        // 回退提示正在占着提示条时别清掉（用户需要看到「为什么台换了」）
+        if (!pinnedHint) errorHint.visibility = View.GONE
         val pos = channelAdapter.positionOf(channel.name)
         if (pos >= 0) channelList.smoothScrollToPosition(pos)
         showInfo()
@@ -1693,6 +1889,8 @@ class MainActivity : Activity() {
             p.playWhenReady = true
             p.setMediaItem(mediaItemOf(url), true)
             p.prepare()
+            // 起播即上弦：正常 2~3s 出图会 disarm；「连上不给数据」的死线靠它兜底
+            armFirstFrameWatchdog(ch)
         }.onFailure {
             Log.w("XiaoHeiTV", "direct 起播失败 ${it.javaClass.simpleName}:${it.message}")
             CrashGuard.notePhase("directError")
@@ -2687,9 +2885,10 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         resumed = false
+        pausedAt = SystemClock.uptimeMillis()
         // 不做后台播放：一旦不可交互就暂停，回到前台再继续。
-        // 预播播放器 playWhenReady 恒为 true 且不接画面，只停主播放器是没用的：
-        // 实测退到别的 App 之后它还会一路刷新直播清单，十几分钟不停，白吃带宽。
+        // 注意这里只「暂停」不「拆台」——播放器里留着的清单和缓冲就是回来时秒出图的根本，
+        // 拆掉就得重新冷启动 2.4~3 秒，屏幕还要黑一下。
         handler.removeCallbacks(prebufferNextTask)
         handler.removeCallbacks(prebufferTimeout)
         handler.removeCallbacks(warmTask)
@@ -2698,7 +2897,11 @@ class MainActivity : Activity() {
         pendingPrebufferStarts.clear()
         pendingDirect?.let { handler.removeCallbacks(it) }
         pendingDirect = null
+        // 退后台不再等首帧：回来时重新起播会重新上弦，别在后台误判死线
+        disarmFirstFrameWatchdog()
         runCatching { player?.pause() }
+        // 预播槽照样收摊：它们 playWhenReady 恒为 true 且不接画面，
+        // 留在后台会一路刷新直播清单，白吃带宽。
         cancelPrebuffer()
         // 播客进度落盘 + 停表：退后台绝不继续跑 1 秒一跳的进度刷新
         stopPodcastTick()
@@ -2710,11 +2913,16 @@ class MainActivity : Activity() {
     override fun onStop() {
         super.onStop()
         resumed = false
-        // 双保险：彻底不可见时停播并释放解码器，退出后不占用后台资源。
-        // 每个播放器单独兜住异常：其中一个已被释放不能拖垮其余的清理。
-        runCatching {
-            player?.stop()
-            player?.clearMediaItems()
+        // 只有真正要离开（Activity 正在结束）时才释放解码器、清空媒体。
+        //
+        // 被自家设置页盖住时不能拆：拆了回来就是「重新拉流 + 黑屏 2~3 秒」，
+        // 而用户只是去改了个设置。播放器保持 prepared、画面留最后一帧，
+        // 回来置一下 playWhenReady 就有画面。
+        if (isFinishing || destroyed) {
+            runCatching {
+                player?.stop()
+                player?.clearMediaItems()
+            }
         }
         preSlots.forEach { s -> runCatching { s.player.stop(); s.player.clearMediaItems() } }
         cancelPrebuffer()
@@ -2730,8 +2938,6 @@ class MainActivity : Activity() {
             loadChannels()
             return
         }
-        // onStop 里 stop()+clearMediaItems() 会把播放器打回 IDLE，
-        // 回来时只置 playWhenReady 会黑屏，必须重新起播（有线路直通表，很快）。
         val ch = currentChannel
         val ep = currentEpisode
         if (ch != null && ch.isPodcast && ep != null) {
@@ -2749,9 +2955,21 @@ class MainActivity : Activity() {
             // 退后台时字幕被清掉了；回来重新挂上（VTT 已在内存/磁盘，命中极快）
             loadTranscript(ep)
         } else if (ch != null && ch.urls.isNotEmpty() && player?.playbackState == Player.STATE_IDLE) {
+            // 播放器确实被打回 IDLE（首次启动 / 已被释放）：只能重新起播
             buildLineOrder(ch)
             val url = ch.urls.getOrElse(urlIndex) { "" }
             if (url.isNotEmpty()) playDirect(ch, url)
+        } else if (ch != null && player != null) {
+            // 播放器里还装着这条流：直接续播，不用重新拉清单。
+            // 离开久了（>3s）直播已经落后，先跳回直播点再看，别让用户看几分钟前的画面。
+            val away = if (pausedAt > 0L) SystemClock.uptimeMillis() - pausedAt else 0L
+            if (away > LIVE_RESEEK_AFTER_MS) {
+                runCatching { player?.seekToDefaultPosition() }
+                Log.i("XiaoHeiTV", "resume 离开 ${away}ms，跳回直播点续播 ${ch.name}")
+            } else {
+                Log.i("XiaoHeiTV", "resume 直接续播 ${ch.name}（离开 ${away}ms，画面保留）")
+            }
+            runCatching { player?.playWhenReady = true }
         } else {
             runCatching { player?.playWhenReady = true }
         }
@@ -2816,6 +3034,37 @@ class MainActivity : Activity() {
 
         /** 2.5s：卡过之后多补一点再恢复，避免「恢复—立刻再卡」的抽风循环 */
         const val BUFFER_AFTER_REBUFFER_MS = 2_500
+
+        /**
+         * 首帧看门狗：prepare 之后这么久还没出图，就判这条线坏了。
+         *
+         * 免费源里有一类「TCP 能连上、握手成功、但一个分片都不给」的死线：不抛错、
+         * 不进 STATE_READY，也没有任何回调——实测能黑着卡一分多钟。启动时命中的往往
+         * 就是这种线（记忆里的「好线」隔天变死线），用户感知就是「开 app 特别慢」。
+         * 6s 覆盖正常冷启动（2.4~3s）并留出 2 倍余量；弱网档按 2 倍放宽。
+         */
+        const val FIRST_FRAME_TIMEOUT_MS = 6_000L
+
+        /** 弱网/中速档的放宽值：1.5Mbps 实测冷启动可达 8s 以上，不能用快网阈值误判好线 */
+        const val FIRST_FRAME_TIMEOUT_WEAK_MS = 12_000L
+
+        /**
+         * 4s：连一个数据加载都没完成的死线判定点。
+         *
+         * 正常网络清单 0.2~1s 回来，弱网也很少超过 4s；超过这个点仍然零加载，
+         * 基本就是「TCP 连上但一个字节不给」，没必要再等满档位预算。
+         */
+        const val MANIFEST_STALL_MS = 4_000L
+
+        /** 4s：回退提示（「已回到 X」）在画面上停留的时间，够看清又不碍事 */
+        const val HINT_PIN_MS = 4_000L
+
+        /**
+         * 3s：从设置页/后台回来，离开超过这个时长就当作「直播已经落后」，
+         * 续播前先跳回直播点，否则回来看到的是几分钟前的画面。
+         * 短于此值说明只是切了一下窗口，接着播最自然（画面本来就还是那一帧）。
+         */
+        const val LIVE_RESEEK_AFTER_MS = 3_000L
 
         /** 3.5s：预播迟迟不就绪就别让用户盯着静帧了（超时改为提前接管，不丢弃已缓冲数据） */
         const val PREBUFFER_TIMEOUT_MS = 3_500L
