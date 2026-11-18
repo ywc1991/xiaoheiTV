@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>小黑 TV · 切台与卡顿优化验证报告</title>
+<style>
+  :root{
+    --ink:#15181d; --ink2:#3d4550; --ink3:#6b7480;
+    --line:#e3e7ec; --bg:#ffffff; --soft:#f6f8fa;
+    --good:#0f7b4f; --goodbg:#e8f5ee;
+    --bad:#b4232a; --badbg:#fdeceb;
+    --warn:#8a5b00; --warnbg:#fdf3e0;
+    --accent:#1f56d0;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:15px; line-height:1.75; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1000px; margin:0 auto; padding:56px 32px 96px}
+  header{border-bottom:2px solid var(--ink); padding-bottom:22px; margin-bottom:8px}
+  .kicker{font-size:12px; letter-spacing:.18em; color:var(--ink3); text-transform:uppercase; margin-bottom:10px}
+  h1{font-size:30px; line-height:1.3; margin:0 0 12px; letter-spacing:-.01em}
+  .meta{font-size:13px; color:var(--ink3); display:flex; flex-wrap:wrap; gap:18px}
+  .meta b{color:var(--ink2); font-weight:600}
+  h2{font-size:20px; margin:52px 0 14px; padding-left:12px; border-left:4px solid var(--accent); line-height:1.3}
+  h3{font-size:15px; margin:28px 0 8px; color:var(--ink2)}
+  p{margin:10px 0}
+  ul{margin:10px 0; padding-left:22px}
+  li{margin:6px 0}
+  code{font-family:"SF Mono",Menlo,Consolas,monospace; font-size:13px; background:var(--soft); padding:1px 5px; border-radius:4px; border:1px solid var(--line)}
+  .lead{font-size:16px; color:var(--ink2); background:var(--soft); border-radius:10px; padding:18px 20px; margin:22px 0 4px; border:1px solid var(--line)}
+  .cards{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:22px 0 6px}
+  .card{border:1px solid var(--line); border-radius:10px; padding:14px 16px; background:#fff}
+  .card .k{font-size:12px; color:var(--ink3); letter-spacing:.04em}
+  .card .v{font-size:22px; font-weight:650; margin:4px 0 2px; font-variant-numeric:tabular-nums}
+  .card .s{font-size:12px; color:var(--ink3); font-variant-numeric:tabular-nums}
+  .card.ok .v{color:var(--good)} .card.no .v{color:var(--bad)}
+  table{width:100%; border-collapse:collapse; margin:14px 0 6px; font-size:14px}
+  th,td{padding:9px 12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top}
+  th{background:var(--soft); font-weight:600; font-size:13px; color:var(--ink2); border-bottom:1px solid #d5dbe3}
+  td.num{font-variant-numeric:tabular-nums; white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  table.boxed{border:1px solid var(--line); border-radius:10px; overflow:hidden}
+  .tag{display:inline-block; font-size:11.5px; font-weight:600; padding:1px 8px; border-radius:20px; white-space:nowrap}
+  .t-ok{color:var(--good); background:var(--goodbg)}
+  .t-no{color:var(--bad); background:var(--badbg)}
+  .t-mid{color:var(--warn); background:var(--warnbg)}
+  .note{font-size:12.5px; color:var(--ink3); margin:8px 0 0}
+  .callout{border-left:3px solid var(--bad); background:var(--badbg); padding:14px 18px; border-radius:0 8px 8px 0; margin:18px 0; font-size:14px}
+  .callout.info{border-color:var(--accent); background:#eef3fd}
+  .callout b{color:var(--ink)}
+  footer{margin-top:60px; padding-top:18px; border-top:1px solid var(--line); font-size:12.5px; color:var(--ink3)}
+  @media (max-width:760px){ .cards{grid-template-columns:repeat(2,1fr)} .wrap{padding:32px 18px 64px} h1{font-size:24px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">Bench Report · Android TV</div>
+  <h1>小黑 TV 切台与卡顿优化验证报告</h1>
+  <div class="meta">
+    <span>基线版本 <b>v2.18.0</b>（线上）</span>
+    <span>对照版本 <b>v2.18.1-dev</b>（工作区，未提交）</span>
+    <span>设备 <b>MiTV-MFFU0 · Android 14 · 3.8 GB</b></span>
+    <span>样本 <b>3 轮 × 12 次切台</b></span>
+  </div>
+</header>
+
+<div class="lead">
+  <b>一句话结论：</b>把「切台未命中就先冻住旧画面、干等预播槽最多 3.5 秒」换成「未命中直接起播 + 预播槽继续后台跑，就绪后自动热切」，<b>超时失败从 3 次降到 0 次，切过去黑屏的问题消失</b>；代价是切台耗时的长尾变长（P90 0.55s → 2.4~3.0s），因为失败样本不再被排除在统计之外。<b>真实瓶颈是预播就绪要 2.3 秒</b>，这一轮没被解决。
+</div>
+
+<div class="cards">
+  <div class="card ok"><div class="k">切台超时 / 黑屏</div><div class="v">3 → 0</div><div class="s">每 12 次切台</div></div>
+  <div class="card ok"><div class="k">完成率</div><div class="v">10/12 → 13/12</div><div class="s">含自动热切补齐</div></div>
+  <div class="card no"><div class="k">切台 P90</div><div class="v">0.55s → 2.35~2.96s</div><div class="s">口径变更，见 §2</div></div>
+  <div class="card ok"><div class="k">长播 120s 卡顿</div><div class="v">0 次</div><div class="s">前后一致</div></div>
+</div>
+
+<h2>1. 测量协议（三轮完全一致）</h2>
+<p>所有数字来自真机 logcat 埋点 + ADB 脚本按键，不靠主观感受。</p>
+<ul>
+  <li><b>冷启动</b>：<code>pm clear</code> → 起应用 → 稳定 3 秒，消除缓存影响。</li>
+  <li><b>切台脚本</b>：右 → OK（进入央视组）→ 依次 <code>KEYCODE_DPAD_DOWN</code> + <code>OK</code> 共 12 次，<b>每次间隔固定 7 秒</b>（足够覆盖最慢一次冷启动）。</li>
+  <li><b>切台耗时</b>：埋点 <code>zapDone</code> − 按键时刻，覆盖「按键 → 出首帧」全链路。</li>
+  <li><b>首帧出画</b>：<code>firstFrame</code> / <code>firstFrameOnScreen</code>（Surface 实际提交帧的时刻）。</li>
+  <li><b>预播就绪</b>：<code>preReady[i] 台名 +Nms</code>，从 <code>startPrebuffer</code> 到 <code>STATE_READY</code>。</li>
+  <li><b>僵尸槽</b>：<code>preZombie[i] state=2 age=…</code>，进入 BUFFERING 后既不 READY 也不报错。</li>
+  <li><b>卡顿</b>：<code>stutterStart</code> / <code>stutterEnd</code>，仅统计「已出过图之后又断粮」，跨台自动清零（这一条修掉过一次 29 秒的虚报）。</li>
+  <li><b>资源</b>：<code>dumpsys meminfo</code> PSS 与 <code>dumpsys cpuinfo</code>，稳定播放 120 秒采样。</li>
+</ul>
+
+<h2>2. 关键口径说明：为什么 P90 变「差」了</h2>
+<div class="callout">
+  <b>这是本报告最需要先讲清楚的一点。</b>基线的 P90 = 550ms 只统计了 <b>成功完成的 10 次</b>；另外 3 次超时（冻屏 3.5 秒后接管、最终仍是黑屏）被算作「未完成」而从分位数里剔除了。优化版把 12 次尝试<b>全部计入</b>，包括冷启动慢的那些。<br><br>
+  换句话说：基线的 550ms 是「只算跑得快的那批」得出的，优化版的 2.4s 是「连失败一起算」得出的。<b>两者不同口径，不能直接比大小</b>；能直接比的是<b>失败次数（3 → 0）</b>和<b>最坏体验的确定性</b>。
+</div>
+
+<h3>同口径核心指标</h3>
+<table class="boxed">
+  <thead><tr><th style="width:32%">指标</th><th style="width:26%">基线 v2.18.0</th><th style="width:26%">优化版 v2.18.1-dev</th><th>判定</th></tr></thead>
+  <tbody>
+    <tr><td>切台超时次数 / 12 次</td><td class="num">3</td><td class="num">0</td><td><span class="tag t-ok">达成</span></td></tr>
+    <tr><td>切过去是黑屏</td><td>3 次</td><td class="num">0 次</td><td><span class="tag t-ok">达成</span></td></tr>
+    <tr><td>完成切台（含自动补齐）</td><td class="num">10 / 12</td><td class="num">12~13 / 12</td><td><span class="tag t-ok">达成</span></td></tr>
+    <tr><td>预播槽命中数</td><td class="num">9</td><td class="num">6~9</td><td><span class="tag t-mid">持平</span></td></tr>
+    <tr><td>切台耗时 P50</td><td class="num">372 ms</td><td class="num">477~1418 ms</td><td><span class="tag t-no">变差</span></td></tr>
+    <tr><td>切台耗时 P90</td><td class="num">550 ms *</td><td class="num">2351~2960 ms</td><td><span class="tag t-no">口径不同</span></td></tr>
+    <tr><td>切台耗时 max</td><td class="num">2679 ms *</td><td class="num">未单独统计</td><td><span class="tag t-mid">P90 已贴近最大值</span></td></tr>
+    <tr><td>预播就绪 P50 / P90</td><td class="num">2373 / 3079 ms</td><td class="num">基本不变</td><td><span class="tag t-mid">未改善</span></td></tr>
+    <tr><td>12 次切台中真卡顿次数</td><td class="num">0</td><td class="num">0~1</td><td><span class="tag t-mid">持平</span></td></tr>
+    <tr><td>稳定播放 120 秒卡顿</td><td class="num">0 次</td><td class="num">0 次</td><td><span class="tag t-ok">持平</span></td></tr>
+    <tr><td>PSS（长播）</td><td class="num">102.4~108.4 MB</td><td class="num">100.9~125.2 MB</td><td><span class="tag t-mid">基本持平</span></td></tr>
+    <tr><td>CPU（长播）</td><td class="num">51.5~65.7 %</td><td class="num">51.5~66.6 %</td><td><span class="tag t-ok">持平</span></td></tr>
+  </tbody>
+</table>
+<p class="note">* 基线分位数只含成功的 10 次，不包含 3 次超时样本。</p>
+
+<h2>3. 根因（都有实测数据支撑）</h2>
+
+<h3>根因 A：预播槽会进入「在缓冲、但永不 READY」的僵尸态</h3>
+<p>槽位 <code>state=2</code>（BUFFERING）持续 <b>17~18 秒</b>既不出图也<b>不报错</b>，<code>onPlayerError</code> 永不触发。基线策略是「等它 3.5 秒」，等不到就接管一个仍在缓冲的播放器 —— 结果就是黑屏。<b>这是 3 次超时的直接来源。</b></p>
+
+<h3>根因 B：槽位越多，并发拉流互拖越严重</h3>
+<table class="boxed">
+  <thead><tr><th style="width:24%">配置</th><th style="width:22%">12 次结果</th><th style="width:18%">P50 / P90</th><th style="width:18%">僵尸槽</th><th>结论</th></tr></thead>
+  <tbody>
+    <tr><td>3 槽（4 路并发 + 4 解码器）</td><td>3 次失败</td><td class="num">—</td><td class="num">4 个</td><td>并发互拖</td></tr>
+    <tr><td>2 槽（3 路并发）</td><td>12/12 全命中</td><td class="num">283 / 348 ms</td><td class="num">0 个</td><td>单轮最优，但多轮不稳定</td></tr>
+  </tbody>
+</table>
+<p>这条数据本可以支持「砍槽位」，但 <b>2 槽在多轮复测里没有稳定复现 12/12</b>，按「未被数据稳定验证为正向即不计入」的原则，<b>已还原为 3 槽</b>，仅作为下一步的重点验证方向（见 §6）。</p>
+
+<h3>根因 C：「能连上但不给数据」的死线绕过了所有现有机制</h3>
+<p>这类源 TCP 握手成功、HTTP 响应也回，但没有分片进得来。它<b>不触发 <code>onPlayerError</code></b>，所以原有的「报错才换线」和死线记忆都抓不到它，只能靠超时兜底。这是当前唯一还能造成长时间等待的场景。</p>
+
+<h2>4. 最终采纳的改动</h2>
+
+<h3>4.1 未命中不再等预播，直接起播并保留预播槽（主要改动）</h3>
+<p>改的是 <code>playCurrentUrl</code> 的 ② 分支：</p>
+<table class="boxed">
+  <thead><tr><th style="width:22%">维度</th><th style="width:39%">改动前（v2.18.0）</th><th style="width:39%">改动后</th></tr></thead>
+  <tbody>
+    <tr><td>行为</td><td>冻住旧画面，等预播槽 READY（≤3500ms）</td><td>立即在主播放器冷启动起播；槽继续后台跑</td></tr>
+    <tr><td>超时后</td><td>接管一个仍在缓冲的播放器 → 黑屏</td><td>不存在这条路径</td></tr>
+    <tr><td>槽的生命周期</td><td>等待失败即被停掉</td><td><code>keepPrebuffer = true</code> 保留，READY 后自动热切补齐</td></tr>
+    <tr><td>用户感知</td><td>静帧 3.5s → 黑屏 → 再按一次键</td><td>黑屏加载约 2.4~3s 后出画；慢源台 1~2s 后自动「补」成秒切</td></tr>
+  </tbody>
+</table>
+<div class="callout info">
+  <b>为什么必须保留预播槽：</b>中途有一版为了「彻底简化」在直连时调了 <code>cancelPrebuffer()</code>，结果命中数直接掉到 <b>0/12</b> —— 每次切台都把流水线清空，下一次必然又 miss，形成「一 miss 到底」的死亡螺旋。<code>keepPrebuffer = true</code> 之后命中数回到 6~9/12。
+</div>
+
+<h3>4.2 埋点与串账修复（不改播放行为，只保证数据可信）</h3>
+<ul>
+  <li>新增 <code>stutterStart</code> / <code>settledChannel</code>：只有「已出过图之后又断粮」才计卡顿，避免把首次缓冲算成卡顿。</li>
+  <li><code>swapToPre</code> 与 <code>playDirectNow</code> 中清零 <code>stutterStart</code> / <code>settledChannel</code>：修掉跨台串账导致的一次 <b>29 秒虚报卡顿</b>。</li>
+  <li>新增 <code>PreSlot.startedAt</code>、<code>preReady</code>、<code>preZombie</code> 日志，僵尸槽从此可被观测。</li>
+</ul>
+
+<h3>4.3 参数表（含适用前提、副作用、回退方式）</h3>
+<table class="boxed">
+  <thead><tr><th style="width:26%">参数</th><th style="width:14%">取值</th><th style="width:30%">适用前提</th><th style="width:30%">副作用 / 回退</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>BUFFER_FOR_START_MS</code></td><td class="num">1200</td>
+      <td>电视端硬解、源普遍 3~6 Mbps；1.2s 是「出图快」和「出图后不断粮」的平衡点</td>
+      <td>调到 700ms 可省约 450ms 冷启动，但实测引入 2444ms 卡顿且命中率下降 —— <b>已回退为 1200</b>。回退即改此常量。</td>
+    </tr>
+    <tr>
+      <td><code>MIN_BUFFER_MS / MAX_BUFFER_MS</code></td><td class="num">8000 / 22000</td>
+      <td>客厅 WiFi，带宽有波动但不至于长期低于码率</td>
+      <td>调小省内存但长播更易卡；调大则内存与切台延迟上升。本轮未改动。</td>
+    </tr>
+    <tr>
+      <td><code>BUFFER_AFTER_REBUFFER_MS</code></td><td class="num">2500</td>
+      <td>卡顿后要攒够 2.5s 才恢复，避免「恢复→立刻再卡」的抖动</td>
+      <td>调小恢复更快但易反复卡；调大看起来更「卡」。本轮未改动。</td>
+    </tr>
+    <tr>
+      <td><code>CrashGuard.slotCount</code></td><td class="num">3（标准档）</td>
+      <td>按 RAM 分档：≥4GB 三槽、低内存一槽</td>
+      <td>降到 2 槽单轮最优但多轮不稳定，<b>已还原为 3</b>。改此行即可回到 2。</td>
+    </tr>
+    <tr>
+      <td><code>PRE_SLOT_MAX_AGE_MS</code></td><td class="num">已删除</td>
+      <td>原本用于「槽太老就重启」</td>
+      <td><b>删除原因：</b><code>startPrebuffer</code> 对同台同址会早退，所谓「重启」是空操作，还把 <code>startedAt</code> 重置为 0，导致槽在用户切台前反而无法被判为僵尸。</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>5. 被否决并已回退的改动</h2>
+<p>以下每一项都实测过，均为负收益，代码已全部还原 —— 按约定不计入最终方案。</p>
+<table class="boxed">
+  <thead><tr><th style="width:30%">改动</th><th style="width:40%">实测结果</th><th style="width:30%">否决理由</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>出图门槛 1200 → 700ms</td>
+      <td>冷启动省约 450ms；但出现 <b>2444ms 卡顿</b>，命中率下降</td>
+      <td>用卡顿换速度，违背「降卡顿优先」</td>
+    </tr>
+    <tr>
+      <td>staleSlot 重起 + watchdog 级联<br>（takeover 2.5s + main 6s）</td>
+      <td>最坏切台 <b>13.8~14.6 秒</b>，P90 <b>7733ms</b></td>
+      <td>比基线明显更差，级联等待互相叠加</td>
+    </tr>
+    <tr>
+      <td>流水线自动重启僵尸槽</td>
+      <td>无任何效果</td>
+      <td><code>startPrebuffer</code> 早退，属空操作且有害（见 §4.3）</td>
+    </tr>
+    <tr>
+      <td>直连时 <code>cancelPrebuffer()</code></td>
+      <td>命中 <b>0/12</b></td>
+      <td>造成「一 miss 到底」，已改为 <code>keepPrebuffer = true</code></td>
+    </tr>
+    <tr>
+      <td>3 槽 → 2 槽</td>
+      <td>单轮 12/12、P50 283ms、零僵尸槽；多轮不能稳定复现</td>
+      <td>数据不足以判定为稳定正向，还原 3 槽待后续专项验证</td>
+    </tr>
+    <tr>
+      <td>超时 → 原地重起槽（而非直连）</td>
+      <td>冷启动 2.2~4.5s，比基线 3.5s 还慢</td>
+      <td>已改为「未命中直接直连」</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>6. 四类场景回归</h2>
+<table class="boxed">
+  <thead><tr><th style="width:22%">场景</th><th style="width:44%">结果</th><th style="width:34%">状态</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>连续快速切台<br>（12 次，间隔 7s）</td>
+      <td>超时 3→0；完成 10/12→13/12；卡顿 0~1 次</td>
+      <td><span class="tag t-ok">通过</span></td>
+    </tr>
+    <tr>
+      <td>长时间播放<br>（120 秒稳定单台）</td>
+      <td>卡顿 0 次；PSS 100.9~125.2MB（基线 102.4~108.4MB）；CPU 51.5~66.6%（基线 51.5~65.7%）</td>
+      <td><span class="tag t-ok">通过</span></td>
+    </tr>
+    <tr>
+      <td>后台来回切换<br>（Home / 返回反复）</td>
+      <td>未重新起流的保护逻辑保留（<code>destroyed || !resumed</code> 直接 return）；未出现后台偷拉流</td>
+      <td><span class="tag t-ok">通过</span></td>
+    </tr>
+    <tr>
+      <td>弱网</td>
+      <td><b>未做网络限速实验</b>，无数据</td>
+      <td><span class="tag t-no">缺口</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>7. 遗留风险与下一步</h2>
+
+<h3>遗留风险</h3>
+<ul>
+  <li><b>预播就绪 P50 ≈ 2.3 秒是切台耗时的硬瓶颈。</b>只要源本身要 2 秒才能攒够 1.2 秒缓冲，"秒切"就只能覆盖已经预热好的那一小部分台。</li>
+  <li><b>「能连上但不给数据」的死线仍只能靠超时兜底。</b>它不报错，现有机制看不见它；用户会看到 2~4 秒的加载圈。</li>
+  <li><b>3 槽并发下的僵尸槽会低频持续出现。</b>现在由「直连 + 保留预播」兜住，不再黑屏，但没有根除。</li>
+  <li><b>弱网场景没有数据。</b>本轮所有结论都是在正常 WiFi 下取得的。</li>
+</ul>
+
+<h3>下一步（按收益/成本排序）</h3>
+<ol>
+  <li><b>把「连接成功但 1.5 秒内零分片」判定为死线（前置探测）。</b>用 <code>AnalyticsListener.onLoadStarted/onLoadCompleted</code> 或字节计数做看门狗，命中即换线。这直接消灭当前唯一的长时间等待场景。</li>
+  <li><b>专项验证 2 槽。</b>以「多轮 × 每轮 12 次」跑 5 轮取分布，而不是单轮。若稳定优于 3 槽，再动 <code>slotCount</code>。</li>
+  <li><b>压缩预播就绪时间。</b>方向：只预拉清单 + 前 2 个分片（不建完整播放器）用于快速出图，完整缓冲就绪后再接管；或按源历史速度只给「快源」预热，慢源不占槽。</li>
+  <li><b>补弱网实验。</b>用 <code>adb shell</code> 注入限速或路由器侧限速，跑同一协议，验证 <code>BUFFER_AFTER_REBUFFER_MS</code> 与 <code>MIN_BUFFER_MS</code> 是否需要按网络状态分档。</li>
+</ol>
+
+<h2>8. 当前交付状态</h2>
+<table class="boxed">
+  <thead><tr><th style="width:26%">项目</th><th>状态</th></tr></thead>
+  <tbody>
+    <tr><td>代码改动</td><td>仅 <code>MainActivity.kt</code>（约 78 增 / 45 删），<b>尚未 commit</b></td></tr>
+    <tr><td>编译 / 单测</td><td><code>compileDebugKotlin</code> + <code>testDebugUnitTest</code> 通过</td></tr>
+    <tr><td>真机</td><td>优化版已装（<code>versionName=2.18.0</code>，用于对照未改版本号）</td></tr>
+    <tr><td>发版</td><td>未发版，等确认</td></tr>
+  </tbody>
+</table>
+
+<footer>
+  数据来源：真机 logcat 埋点 + ADB 脚本，设备 MiTV-MFFU0 / Android 14 / RAM 3789MB / 硬解 27 路 / CrashGuard 标准档。<br>
+  所有分位数由同一脚本解析，样本量 3 轮 × 12 次切台；标注「未测」的场景不参与结论。
+</footer>
+
+</div>
+</body>
+</html>

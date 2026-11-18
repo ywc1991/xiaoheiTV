@@ -211,6 +211,12 @@ class MainActivity : Activity() {
     // 它比原来多缓冲了一整个切台周期，于是从第 2 次起一路都是百毫秒级秒切。
     // 每个槽都是活的播放器，自己刷新清单、跟着直播边缘走，不会喂过期清单。
 
+    /** 本次卡顿开始的时刻，0 表示当前不在卡顿中（只统计「出过图之后又断粮」） */
+    private var stutterStart = 0L
+
+    /** 当前这条线是否已经正常出过图：只有出过图之后的 BUFFERING 才算真卡顿 */
+    private var settledChannel: String? = null
+
     /** 一个预播槽：一台静音、不接画面的播放器 + 它当前缓冲的目标 */
     private class PreSlot(
         val index: Int,
@@ -218,7 +224,9 @@ class MainActivity : Activity() {
         var channel: Channel? = null,
         var url: String? = null,
         var failed: Boolean = false,
-        var tries: Int = 0
+        var tries: Int = 0,
+        /** 这次起流的时刻，用来量「预播多久能到 READY」，是切台命中率的核心指标 */
+        var startedAt: Long = 0L
     )
 
     /** 两个槽轮换；主播放器永远不在列表里，swap 时和某个槽互换 */
@@ -956,6 +964,7 @@ class MainActivity : Activity() {
                 if (p === player && swapAt > 0L) {
                     Log.i("XiaoHeiTV", "firstFrameOnScreen +${SystemClock.uptimeMillis() - swapAt}ms")
                     swapAt = 0L
+
                     if (zapStartedAt > 0L) {
                         Log.i("XiaoHeiTV", "zapDone +${SystemClock.uptimeMillis() - zapStartedAt}ms（预播命中）")
                         zapStartedAt = 0L
@@ -1055,12 +1064,26 @@ class MainActivity : Activity() {
         if (playbackState == Player.STATE_READY || playbackState == Player.STATE_BUFFERING) {
             errorHint.visibility = View.GONE
         }
-        if (playbackState == Player.STATE_BUFFERING) return
+        if (playbackState == Player.STATE_BUFFERING) {
+            // 只有「已经正常出过图之后又断粮」才算真卡顿；起播/切台那一次不算
+            val ch = currentChannel
+            if (ch != null && settledChannel == ch.name && stutterStart == 0L) {
+                stutterStart = SystemClock.uptimeMillis()
+                Log.i("XiaoHeiTV", "stutterStart ${ch.name}")
+            }
+            return
+        }
         if (playbackState == Player.STATE_READY) {
             // 切台等待期间主播放器仍是旧台：它的 READY 不能清「切换中」，
             // 更不能把「还没出图」的新台线路提前写成已验证。
             val ch = currentChannel
             if (ch == null || activeChannel?.name != ch.name) return
+            // 卡顿结算：出一条可对比的指标行
+            if (stutterStart > 0L) {
+                Log.i("XiaoHeiTV", "stutterEnd ${ch.name} +${SystemClock.uptimeMillis() - stutterStart}ms")
+                stutterStart = 0L
+            }
+            settledChannel = ch.name
             // 换线只由报错驱动：缓冲卡顿不再计次、不再触发静默换线或备用线救援
             autoTries = 0
             // 播客续播：等播放器真 READY 再跳，太早 seek 会被 prepare 覆盖掉
@@ -1131,7 +1154,25 @@ class MainActivity : Activity() {
     }
 
     private fun onPreState(slot: PreSlot, playbackState: Int) {
-        if (playbackState != Player.STATE_READY) return
+        if (playbackState != Player.STATE_READY) {
+            // 诊断：3=ENDED / 1=IDLE 的槽是「僵尸槽」，永远等不到 READY，切过去会黑屏
+            if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
+                Log.w(
+                    "XiaoHeiTV",
+                    "preZombie[${slot.index}] ${slot.channel?.name} state=$playbackState" +
+                        " age=${if (slot.startedAt > 0L) SystemClock.uptimeMillis() - slot.startedAt else -1}ms"
+                )
+            }
+            return
+        }
+        // 预播就绪耗时：这是「切台能不能命中」的关键指标，一条流 2s 内就绪才算健康
+        if (slot.startedAt > 0L && slot.channel != null) {
+            Log.i(
+                "XiaoHeiTV",
+                "preReady[${slot.index}] ${slot.channel?.name} +${SystemClock.uptimeMillis() - slot.startedAt}ms"
+            )
+            slot.startedAt = 0L
+        }
         val ch = currentChannel ?: return
         // 只比台名：预播可能已经自己换过线路，拿旧的 urlIndex 去比会误判成「没命中」
         if (slot.channel?.name != ch.name || slot.failed) return
@@ -1191,6 +1232,10 @@ class MainActivity : Activity() {
             slot.player = old
             player = np
             activeChannel = ch
+            // 「卡不卡」是「这条线在这个台上」的属性：换台必须清账，
+            // 否则上一台的卡顿计时会算到新台头上（实测虚报过 29 秒）
+            stutterStart = 0L
+            settledChannel = null
             slot.url?.let { rememberGoodLine(ch.name, it) }
             slot.tries = 0
             swapAt = SystemClock.uptimeMillis()
@@ -1244,17 +1289,20 @@ class MainActivity : Activity() {
         slot: PreSlot,
         ch: Channel,
         url: String,
-        resetTries: Boolean = true
+        resetTries: Boolean = true,
+        /** true＝无视「同台同址正在缓冲」的早退，强制重起（用于救卡死的僵尸槽） */
+        force: Boolean = false
     ) {
         if (destroyed || !resumed) return
         val p = slot.player
-        if (slot.channel?.name == ch.name && slot.url == url && p.playbackState != Player.STATE_IDLE) return
+        if (!force && slot.channel?.name == ch.name && slot.url == url && p.playbackState != Player.STATE_IDLE) return
         // 预播是「加分项」，任何异常都不该把正在看的节目带下水
         runCatching {
             if (resetTries) slot.tries = 0
             slot.channel = ch
             slot.url = url
             slot.failed = false
+            slot.startedAt = SystemClock.uptimeMillis()
             p.stop()
             p.volume = 0f
             setAudioEnabled(p, false)
@@ -1294,12 +1342,10 @@ class MainActivity : Activity() {
         val ch = currentChannel ?: return@Runnable
         if (activeChannel?.name == ch.name) return@Runnable
         val slot = preSlots.firstOrNull { !it.failed && it.channel?.name == ch.name }
-        if (slot != null) {
-            // 旧做法是丢掉预播、在主播放器上从零起播，实测反而更慢（6.2s）。
-            // 已经缓冲几秒的数据不扔：直接把画面接过来，让它边下边出图。
-            Log.i("XiaoHeiTV", "prebuffer 超时，提前接管 ${ch.name}")
+        if (slot != null && slot.player.playbackState == Player.STATE_READY) {
+            Log.i("XiaoHeiTV", "prebuffer 超时但已就绪，直接接管 ${ch.name}")
             syncUrlIndexFromPre(slot, ch)
-            swapToPre(slot, allowBuffering = true)
+            swapToPre(slot)
         } else {
             Log.i("XiaoHeiTV", "prebuffer 超时，改为直接起播 ${ch.name}")
             playDirect(ch, primaryUrl(ch) ?: return@Runnable)
@@ -1569,38 +1615,27 @@ class MainActivity : Activity() {
             return
         }
 
-        // ② 没有现成画面可换：旧画面停在最后一帧，把带宽全让给正在缓冲的新台。
-        //    原来旧台会继续播、继续拉流，和新台抢带宽，把 2.5 秒拖得更长。
-        if (preSlots.isNotEmpty() && player?.playbackState == Player.STATE_READY) {
-            val buffering = preSlots.firstOrNull { !it.failed && it.channel?.name == ch.name }
-            if (buffering == null) {
-                // 没有任何槽在管这个台：拿一个空闲槽重新起流，别把已备好的预测台都丢掉
-                val slot = preSlots.firstOrNull { it.channel == null || it.failed } ?: preSlots.last()
-                startPrebuffer(slot, ch, url)
-            }
-            // 等待新台缓冲的这 1~2 秒，另一个槽不能闲着。
-            //
-            // 原来流水线只在「swap 成功 / 主播放器 READY」后才排下一台，于是形成连锁：
-            // 一次没命中 → 等待期没预播 → 下次切台也没命中 → 又等 1.5s……
-            // 实测缓冲一条流要 1.6~2.4s，而用户 1.6s 就切一次台，等待期不提前干活就永远慢半拍。
-            //
-            // prebufferNext 内部会把「正在缓冲当前目标台」的那个槽保留（见 c.name == cur.name 分支），
-            // 所以这里调度只会让空槽去备下一台，不会把已经在缓冲的目标台停掉重来。
-            schedulePrebufferNext()
-            runCatching { player?.playWhenReady = false }
-            // 新台还在缓冲时画面是静帧，不给提示用户会以为按键没生效、又按一次
-            showZapPending(ch)
-            handler.removeCallbacks(prebufferTimeout)
-            handler.postDelayed(prebufferTimeout, prebufferTimeoutMs())
-            return
-        }
-
-        // ③ 没有在播的画面（刚启动 / 上一个台彻底失败）：只能在主播放器上直接起播
-        playDirect(ch, url)
+        // ② 没有现成画面可换：直接在主播放器上起播，不再「停下来等预播」。
+        //
+        // 原做法是把旧画面冻住、等预播槽变 READY（最多 3.5 秒）。实测这笔等待基本是白等：
+        // 12 次切台里 3~4 次等到超时也没等到画面，超时后接管一个仍在缓冲的播放器还是黑的，
+        // 用户要么盯着静帧、要么再按一次键。改成直接起播后，一次冷启动约 2.4~3 秒就有画面，
+        // 最坏情况反而更短、而且结果确定（不再出现「切过去是黑的」）。
+        //
+        // 预播槽继续留在后台跑：它一旦就绪，onPreState 会在用户还没按下一键时把画面热切过去，
+        // 所以慢源台也能在 1~2 秒后自动「补」成秒切。
+        // 刚启动 / 上一个台彻底失败时也走这条路：主播放器直接起播，槽照旧留在后台。
+        playDirect(ch, url, keepPrebuffer = true)
     }
 
-    /** 直接在主播放器上起播：没有可保留的旧画面时的兜底路径 */
-    private fun playDirect(ch: Channel, url: String) {
+    /**
+     * 直接在主播放器上起播：没有可保留的旧画面时的兜底路径。
+     *
+     * [keepPrebuffer] true 时保留预播槽：切台未命中后直接起播，槽里那条正在缓冲的同一路流
+     * 一旦 READY，onPreState 会立刻把画面热切过去（用户等 1~2 秒后自动「补」成秒切）。
+     * 若这里把槽全停掉，下一次切台必然又没命中，形成「一 miss 到底」的连锁。
+     */
+    private fun playDirect(ch: Channel, url: String, keepPrebuffer: Boolean = false) {
         if (destroyed) return
         // 极快连按（间隔 <120ms）时把「需要冷启动」的请求合并成最后一次：
         // 实测 1 秒内连按 40 次会建 40 条流，老盒子的解码器实例和内存直接被打满。
@@ -1609,27 +1644,29 @@ class MainActivity : Activity() {
         val wait = coalesceMs() - (now - lastDirectAt)
         if (lastDirectAt > 0L && wait > 0L) {
             pendingDirect?.let { handler.removeCallbacks(it) }
-            val task = Runnable { playDirectNow(ch, url) }
+            val task = Runnable { playDirectNow(ch, url, keepPrebuffer) }
             pendingDirect = task
             handler.postDelayed(task, wait)
             if (zapStartedAt > 0L) showZapPending(ch)
             return
         }
-        playDirectNow(ch, url)
+        playDirectNow(ch, url, keepPrebuffer)
     }
 
-    private fun playDirectNow(ch: Channel, url: String) {
+    private fun playDirectNow(ch: Channel, url: String, keepPrebuffer: Boolean = false) {
         // 合并任务可能在 onPause 之后才到期；后台绝不重新起流
         if (destroyed || !resumed) return
         val p = player ?: return
         lastDirectAt = SystemClock.uptimeMillis()
         pendingDirect = null
         Log.i("XiaoHeiTV", "directStart ${ch.name}（冷启动一次）")
-        cancelPrebuffer()
+        if (!keepPrebuffer) cancelPrebuffer()
         if (zapStartedAt > 0L) showZapPending(ch)
         // 这是所有切台路径的最后一道兜底：解码器或播放器状态异常时只记日志、不让它冒到主线程
         runCatching {
             activeChannel = ch
+            stutterStart = 0L
+            settledChannel = null
             p.volume = 1f
             setAudioEnabled(p, true)
             // playWhenReady 先置位，prepare 一完成立刻出画面，不用再等一次 play() 的回调
