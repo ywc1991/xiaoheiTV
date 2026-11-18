@@ -8,6 +8,7 @@ import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.TransferListener
 
 /**
  * 包一层播放器的 HTTP 数据源：m3u8 播放列表在交给 ExoPlayer 之前先做广告剔除，
@@ -17,7 +18,9 @@ class AdFilterDataSourceFactory(
     context: Context,
     private val enabled: () -> Boolean,
     /** 电台态为 true：只有这时才向服务器索取 ICY 曲目元数据 */
-    private val icyMeta: () -> Boolean = { false }
+    private val icyMeta: () -> Boolean = { false },
+    /** 共享带宽估计器：挂在最底层 HTTP 数据源上，主播放器与预播槽的所有拉流字节都计入 */
+    private val transferListener: TransferListener? = null
 ) : DataSource.Factory {
 
     // 与 media3 默认行为一致的 UA，避免个别源对 UA 敏感
@@ -30,6 +33,9 @@ class AdFilterDataSourceFactory(
             // 压到 3 秒，配合「不重试」和线路直通表，死链让位更快。
             .setConnectTimeoutMs(3_000)
             .setReadTimeoutMs(15_000)
+        if (transferListener != null) {
+            factory.setTransferListener(transferListener)
+        }
         // 老式电台流只有客户端主动说要，服务器才会在音频里插曲目信息。
         // 视频请求不会走到这里（谓词为 false），请求头和以前完全一样。
         if (icyMeta()) {

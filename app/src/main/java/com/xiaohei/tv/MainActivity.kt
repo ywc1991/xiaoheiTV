@@ -24,6 +24,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.LoadControl
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
@@ -50,6 +51,8 @@ import com.xiaohei.tv.model.PodcastEpisode
 import com.xiaohei.tv.model.PodcastShow
 import com.xiaohei.tv.player.AdFilter
 import com.xiaohei.tv.player.AdFilterDataSourceFactory
+import com.xiaohei.tv.player.AdaptiveLoadControl
+import com.xiaohei.tv.player.NetProbe
 import com.xiaohei.tv.player.AdRules
 import com.xiaohei.tv.player.IcyDataSourceFactory
 import com.xiaohei.tv.player.TlsRelax
@@ -362,6 +365,9 @@ class MainActivity : Activity() {
         CrashGuard.notePhase("onCreate")
         conservative = DeviceProfile.isConservative(this)
         Log.i("XiaoHeiTV", "device ${DeviceProfile.summary(this)}")
+        // 网络速度自适应：先建共享带宽估计器，后面所有播放器的拉流字节都计入它。
+        // 必须在任何 prepare 之前——估计器没有数据时会按快网档处理（=v2.18.1 行为）。
+        NetProbe.init(this)
         relaxTls()
         setContentView(R.layout.activity_main)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -926,7 +932,9 @@ class MainActivity : Activity() {
                         AdFilterDataSourceFactory(
                             this,
                             enabled = { store.adBlock && !radioMode },
-                            icyMeta = { radioMode }
+                            icyMeta = { radioMode },
+                            // 共享带宽估计器：主播放器与预播槽的所有拉流字节都计入同一个 meter
+                            transferListener = NetProbe.meterOrNull()
                         ),
                         enabled = { radioMode },
                         onTitle = ::onRadioTitle
@@ -1379,6 +1387,12 @@ class MainActivity : Activity() {
         }
         if (preSlots.isEmpty()) return
         runCatching {
+            // 弱网档把预播预算压到 2 路：总带宽 1.5Mbps 时 4 路并发谁也喂不饱
+            // （基线实测第三槽永远等不到 READY），少一路并发把带宽让给正在看的画面。
+            // 快网档 budget = preSlots.size，行为与 v2.18.1 完全一致。
+            val budget =
+                if (NetProbe.ENABLED && NetProbe.tier() == NetProbe.Tier.SLOW) minOf(2, preSlots.size)
+                else preSlots.size
             val flat = prebufferSequence()
             val n = flat.size
             if (n < 2) return
@@ -1389,7 +1403,7 @@ class MainActivity : Activity() {
             // 预测顺序见 ZapPredict：同方向下一台 → 来时的上一台 → 同方向再下一台。
             // 把「来时那个台」提到第二位是为「广告时间切走、广告结束切回」准备的——
             // 这个动作在电视上比连按同向常见得多，而老顺序会让它每次都冷启动 4 秒起步。
-            val targets = ZapPredict.targets(i, n, lastZapDir, preSlots.size).map { flat[it] }
+            val targets = ZapPredict.targets(i, n, lastZapDir, budget).map { flat[it] }
             if (targets.isEmpty()) return
 
             // 已经在缓冲目标台的槽一律原样保留：停一下就得重新冷启动 2.5 秒，太亏。
@@ -1410,7 +1424,8 @@ class MainActivity : Activity() {
 
             for (target in targets) {
                 if (target.name in covered) continue
-                val slot = preSlots.firstOrNull { it.index !in used } ?: break
+                // 弱网档降级：只用前 budget 个槽，多余的槽由末尾的 stopSlot 停掉让路
+                val slot = preSlots.firstOrNull { it.index < budget && it.index !in used } ?: break
                 val url = primaryUrl(target) ?: continue
                 used += slot.index
                 // 两路流别同时冷启动：错峰固定在槽位上，
@@ -1572,8 +1587,8 @@ class MainActivity : Activity() {
     }
 
     /** 起播门槛：库默认按点播调（缓冲够 2.5 秒才开播），直播切台时这几秒就白等了 */
-    private fun buildLoadControl(forPrebuffer: Boolean): DefaultLoadControl =
-        DefaultLoadControl.Builder()
+    private fun buildLoadControl(forPrebuffer: Boolean): LoadControl {
+        val inner = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 MIN_BUFFER_MS,          // 5s  最低缓冲
                 // 保守档的预播只是「备用」，别让它囤 15 秒视频占满 2GB 内存；
@@ -1585,6 +1600,11 @@ class MainActivity : Activity() {
             // 时间优先于字节数：网速一般时先凑够「能出图的时长」，而不是非等够字节量
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
+        if (!NetProbe.ENABLED) return inner
+        // 弱网自适应包装：快网档行为与 v2.18.1 一字不差（直接委托 inner），
+        // MED/SLOW 档只会要求更多缓冲才起播，不会比现状更快出画。
+        return AdaptiveLoadControl(inner)
+    }
 
     private fun playCurrentUrl() {
         val ch = currentChannel ?: return

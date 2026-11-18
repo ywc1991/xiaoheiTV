@@ -321,31 +321,40 @@
                         android:paddingBottom="12dp"
                         tools:listitem="@layout/item_channel" />
 
-                    <ProgressBar
-                        android:id="@+id/loadingBar"
-                        style="?android:attr/progressBarStyle"
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:layout_gravity="center"
-                        android:indeterminateTint="@color/text_secondary"
-                        android:visibility="gone" />
                 </FrameLayout>
             </LinearLayout>
         </LinearLayout>
 
-        <!-- 底部操作提示：只做最轻的说明，不抢视线 -->
-        <TextView
-            android:id="@+id/laneHint"
+        <!-- 底部操作提示：只做最轻的说明，不抢视线。
+             换台反馈圈与提示行同层、贴面板真正的右下角。 -->
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:letterSpacing="0.02"
-            android:paddingStart="20dp"
-            android:paddingTop="10dp"
-            android:paddingEnd="16dp"
-            android:paddingBottom="14dp"
-            android:text="↑↓ 选择　OK 播放　← 返回&#10;长按 OK 收藏　菜单 设置"
-            android:textColor="@color/text_secondary"
-            android:textSize="11sp" />
+            android:layout_height="wrap_content">
+
+            <TextView
+                android:id="@+id/laneHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.02"
+                android:paddingStart="20dp"
+                android:paddingTop="10dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="14dp"
+                android:text="↑↓ 选择　OK 播放　← 返回&#10;长按 OK 收藏　菜单 设置"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+
+            <ProgressBar
+                android:id="@+id/loadingBar"
+                style="?android:attr/progressBarStyle"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_gravity="bottom|end"
+                android:layout_marginEnd="18dp"
+                android:layout_marginBottom="10dp"
+                android:indeterminateTint="@color/text_secondary"
+                android:visibility="gone" />
+        </FrameLayout>
     </LinearLayout>
 
     <!--
