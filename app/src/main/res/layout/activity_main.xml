@@ -252,16 +252,24 @@
                 android:orientation="vertical"
                 android:paddingHorizontal="8dp">
 
-                <!-- 左栏顶部：只放从启动图标里抠出的整只猫，去掉白色底板，直接贴在玻璃上 -->
+                <!-- 左栏顶部：只放从启动图标里抠出的整只猫，去掉白色底板，直接贴在玻璃上。
+                     这只猫同时是设置入口：点一下（遥控器方向键移上来按 OK 也行）进设置。
+                     电视上没有「齿轮图标」的位置，猫头是面板里唯一一块稳定的品牌区，
+                     把设置挂在这里比藏在菜单键后面更容易被发现。 -->
                 <FrameLayout
                     android:layout_width="match_parent"
                     android:layout_height="56dp">
 
                     <ImageView
-                        android:layout_width="40dp"
-                        android:layout_height="40dp"
+                        android:id="@+id/brandLogo"
+                        android:layout_width="52dp"
+                        android:layout_height="52dp"
                         android:layout_gravity="center"
-                        android:contentDescription="@string/app_name"
+                        android:background="@drawable/brand_logo_bg"
+                        android:clickable="true"
+                        android:contentDescription="@string/settings"
+                        android:focusable="true"
+                        android:padding="6dp"
                         android:scaleType="fitCenter"
                         android:src="@drawable/ic_cat_mark" />
                 </FrameLayout>

@@ -93,6 +93,8 @@ class MainActivity : Activity() {
     private lateinit var channelAdapter: ChannelAdapter
     private lateinit var groupList: RecyclerView
     private lateinit var channelList: RecyclerView
+    /** 左上角猫头：面板里唯一的品牌区，兼作设置入口（点一下 / 方向键移上来按 OK） */
+    private lateinit var brandLogo: ImageView
     private lateinit var listPanel: LinearLayout
     /** 列表面板下面那层压暗：玻璃浮起来需要背景够沉 */
     private lateinit var listScrim: View
@@ -423,6 +425,10 @@ class MainActivity : Activity() {
         }
         groupList = findViewById(R.id.groupList)
         channelList = findViewById(R.id.channelList)
+        // 猫头＝设置入口。点击（鼠标/触摸/空中飞鼠）直接走这里，
+        // 纯方向键遥控器则是「分组栏最上面再按 ↑」把焦点移上来，再按 OK。
+        brandLogo = findViewById(R.id.brandLogo)
+        brandLogo.setOnClickListener { openSettings() }
         laneHint = findViewById(R.id.laneHint)
         playerView = findViewById(R.id.playerView)
         infoBar = findViewById(R.id.infoBar)
@@ -787,6 +793,29 @@ class MainActivity : Activity() {
      * 打开前先把 OSD 收掉：设置页要停留一会儿，回来时如果顶部还挂着一条
      * 离开前的台名，会让人以为「刚才那个台已经播了这么久」。
      */
+    /**
+     * 各品牌遥控器的「菜单 / 设置」键对不上号，这里把常见的都认下来：
+     *   MENU                    标准菜单键（小米、当贝、多数盒子）
+     *   SETTINGS                部分电视把「设置」键直接送到应用（海信、创维某些型号）
+     *   TV_CONTENTS_MENU        「主菜单」（索尼、飞利浦）
+     *   TV_MEDIA_CONTEXT_MENU   「选项 / 更多」（同上）
+     *   INFO                    部分老遥控器的「信息」键就是菜单复用键
+     *   PROG_RED..BLUE          彩色键：不少机顶盒把菜单做在红键上
+     * 只收这些「在本应用里本来没有语义」的键，绝不和方向 / OK / 返回抢键。
+     */
+    private fun isSettingsKey(code: Int): Boolean = when (code) {
+        KeyEvent.KEYCODE_MENU,
+        KeyEvent.KEYCODE_SETTINGS,
+        KeyEvent.KEYCODE_TV_CONTENTS_MENU,
+        KeyEvent.KEYCODE_TV_MEDIA_CONTEXT_MENU,
+        KeyEvent.KEYCODE_INFO,
+        KeyEvent.KEYCODE_PROG_RED,
+        KeyEvent.KEYCODE_PROG_GREEN,
+        KeyEvent.KEYCODE_PROG_YELLOW,
+        KeyEvent.KEYCODE_PROG_BLUE -> true
+        else -> false
+    }
+
     private fun openSettings() {
         handler.removeCallbacks(hideInfo)
         infoBar.visibility = View.GONE
@@ -2677,6 +2706,14 @@ class MainActivity : Activity() {
             return true
         }
 
+        // ---- 「菜单 / 设置」键：任何界面（列表、全屏、分集、书架）都直接进设置 ----
+        // 放在最前面，因为它不受焦点和面板层级影响：想改设置时不用先退出正在看的东西。
+        if (isSettingsKey(code)) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) openSettings()
+            return true
+        }
+
+
         // ---- 分集面板：上下键交给 RecyclerView 自己挪焦点，其余按键在这里判 ----
         if (panelOpen) {
             if (isOk) {
@@ -2705,10 +2742,6 @@ class MainActivity : Activity() {
                     if (event.action == KeyEvent.ACTION_DOWN) closeShelf()
                     return true
                 }
-                KeyEvent.KEYCODE_MENU -> {
-                    if (event.action == KeyEvent.ACTION_DOWN) openSettings()
-                    return true
-                }
                 KeyEvent.KEYCODE_DPAD_LEFT -> {
                     // 已经在最左一列：再按左就退出书架，和列表里「左键收起」一致
                     if (event.action == KeyEvent.ACTION_DOWN) {
@@ -2728,6 +2761,11 @@ class MainActivity : Activity() {
 
         // ---- OK / ENTER：短按与长按分开处理 ----
         if (isOk) {
+            // 焦点在猫头上：OK ＝ 进设置（这里没有「长按收藏」的语义，按住也算短按）
+            if (brandLogo.hasFocus()) {
+                if (event.action == KeyEvent.ACTION_UP) openSettings()
+                return true
+            }
             if (event.action == KeyEvent.ACTION_DOWN) {
                 if (event.repeatCount == 0) {
                     longPressFired = false
@@ -2760,7 +2798,7 @@ class MainActivity : Activity() {
         if (event.action != KeyEvent.ACTION_DOWN) {
             // 已处理过的按键，抬起事件一并吞掉，避免重复触发
             return when (code) {
-                KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_BACK,
+                KeyEvent.KEYCODE_BACK,
                 KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
                 KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> true
                 else -> super.dispatchKeyEvent(event)
@@ -2768,13 +2806,6 @@ class MainActivity : Activity() {
         }
 
         when (code) {
-            KeyEvent.KEYCODE_MENU -> {
-                // 菜单键只做一件事：打开设置。
-                // 全屏播放时同样有效——以前这里被吞掉，想改设置得先按返回退出全屏，
-                // 等于把「设置」藏在了只有退出观看才能到达的地方。
-                openSettings()
-                return true
-            }
             KeyEvent.KEYCODE_BACK -> {
                 // 返回键逐层回退：
                 //   全屏 → 唤出频道列表（播客全屏 → 回这一档的分集）
@@ -2825,7 +2856,21 @@ class MainActivity : Activity() {
                     zapChannel(if (up) -1 else 1)
                     return true
                 }
-                if (focusInGroups) moveGroupFocus(if (up) -1 else 1) else moveChannelFocus(if (up) -1 else 1)
+                if (focusInGroups) {
+                    // 分组栏最上面再按 ↑ ＝ 焦点移到左上角猫头（设置入口）；猫头上按 ↓ 回到分组栏。
+                    // 猫头上再按 ↑ 依然循环到最后一组——循环没丢，只是顶部多了一站。
+                    if (brandLogo.hasFocus()) {
+                        if (up) moveGroupFocus(-1) else focusGroupAt(groupIndex)
+                        return true
+                    }
+                    if (up && groupIndex == 0) {
+                        brandLogo.requestFocus()
+                        return true
+                    }
+                    moveGroupFocus(if (up) -1 else 1)
+                } else {
+                    moveChannelFocus(if (up) -1 else 1)
+                }
                 return true
             }
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
