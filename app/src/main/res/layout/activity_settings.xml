@@ -45,7 +45,8 @@
             android:layout_marginTop="26dp"
             android:background="@drawable/glass_card"
             android:orientation="vertical"
-            android:paddingHorizontal="10dp"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
             android:paddingTop="16dp"
             android:paddingBottom="10dp">
 

@@ -794,6 +794,21 @@ class MainActivity : Activity() {
      * 离开前的台名，会让人以为「刚才那个台已经播了这么久」。
      */
     /**
+     * 「确认」键不只有 DPAD_CENTER：
+     *   标准遥控器 → DPAD_CENTER；部分蓝牙遥控（极米、坚果一类）报 ENTER；
+     *   第三方遥控/手柄 → BUTTON_A、BUTTON_SELECT；带数字键盘的遥控 → NUMPAD_ENTER。
+     * 少认一个，那台机器上就是「方向能动、按 OK 没反应」。
+     */
+    private fun isOkKey(code: Int): Boolean = when (code) {
+        KeyEvent.KEYCODE_DPAD_CENTER,
+        KeyEvent.KEYCODE_ENTER,
+        KeyEvent.KEYCODE_NUMPAD_ENTER,
+        KeyEvent.KEYCODE_BUTTON_A,
+        KeyEvent.KEYCODE_BUTTON_SELECT -> true
+        else -> false
+    }
+
+    /**
      * 各品牌遥控器的「菜单 / 设置」键对不上号，这里把常见的都认下来：
      *   MENU                    标准菜单键（小米、当贝、多数盒子）
      *   SETTINGS                部分电视把「设置」键直接送到应用（海信、创维某些型号）
@@ -2696,7 +2711,7 @@ class MainActivity : Activity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val code = event.keyCode
-        val isOk = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER
+        val isOk = isOkKey(code)
 
         // 启动后 1 秒内吞掉方向键与 OK，避免系统残留事件误触
         if (justLaunched() && (isOk || code == KeyEvent.KEYCODE_DPAD_UP ||

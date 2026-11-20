@@ -3,6 +3,7 @@ package com.xiaohei.tv.player
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.Util
 import androidx.media3.exoplayer.LoadControl
+import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.analytics.PlayerId
 import androidx.media3.exoplayer.source.MediaSource.MediaPeriodId
 import androidx.media3.exoplayer.source.TrackGroupArray
@@ -49,10 +50,13 @@ class AdaptiveLoadControl(private val inner: LoadControl) : LoadControl {
     override fun onReleased(playerId: PlayerId) = inner.onReleased(playerId)
 
     override fun onTracksSelected(
-        parameters: LoadControl.Parameters,
+        playerId: PlayerId,
+        timeline: Timeline,
+        mediaPeriodId: MediaPeriodId,
+        renderers: Array<Renderer>,
         trackGroups: TrackGroupArray,
         selections: Array<ExoTrackSelection>
-    ) = inner.onTracksSelected(parameters, trackGroups, selections)
+    ) = inner.onTracksSelected(playerId, timeline, mediaPeriodId, renderers, trackGroups, selections)
 
     override fun getBackBufferDurationUs(playerId: androidx.media3.exoplayer.analytics.PlayerId): Long =
         inner.getBackBufferDurationUs(playerId)
@@ -70,12 +74,6 @@ class AdaptiveLoadControl(private val inner: LoadControl) : LoadControl {
         val needMs = if (parameters.rebuffering) rebufferMs(tier) else startMs(tier)
         return parameters.bufferedDurationUs >= Util.msToUs(needMs)
     }
-
-    override fun shouldContinuePreloading(
-        timeline: Timeline,
-        mediaPeriodId: MediaPeriodId,
-        bufferedDurationUs: Long
-    ): Boolean = inner.shouldContinuePreloading(timeline, mediaPeriodId, bufferedDurationUs)
 
     private fun startMs(tier: NetProbe.Tier): Long = when (tier) {
         NetProbe.Tier.SLOW -> START_SLOW_MS

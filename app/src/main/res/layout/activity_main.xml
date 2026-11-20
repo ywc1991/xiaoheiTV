@@ -213,7 +213,8 @@
         android:background="@drawable/card_overlay"
         android:gravity="center"
         android:maxWidth="420dp"
-        android:paddingHorizontal="24dp"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
         android:paddingVertical="16dp"
         android:textColor="@color/text_secondary"
         android:textSize="13sp"
@@ -250,7 +251,8 @@
                 android:layout_weight="36"
                 android:layout_height="match_parent"
                 android:orientation="vertical"
-                android:paddingHorizontal="8dp">
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp">
 
                 <!-- 左栏顶部：只放从启动图标里抠出的整只猫，去掉白色底板，直接贴在玻璃上。
                      这只猫同时是设置入口：点一下（遥控器方向键移上来按 OK 也行）进设置。
@@ -331,7 +333,8 @@
                         android:layout_height="match_parent"
                         android:clipChildren="false"
                         android:clipToPadding="false"
-                        android:paddingHorizontal="8dp"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
                         android:paddingBottom="12dp"
                         tools:listitem="@layout/item_channel" />
 
@@ -529,7 +532,8 @@
                 android:layout_gravity="center"
                 android:gravity="center"
                 android:lineSpacingExtra="4dp"
-                android:paddingHorizontal="24dp"
+                android:paddingStart="24dp"
+                android:paddingEnd="24dp"
                 android:paddingVertical="16dp"
                 android:textColor="@color/text_secondary"
                 android:textSize="13sp"

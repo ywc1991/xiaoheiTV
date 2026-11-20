@@ -22,12 +22,13 @@ object ChannelGroups {
     const val CCTV = "央视"
     const val SATELLITE = "卫视"
     const val HKMO_TW = "港澳台"
+    const val OVERSEAS = "海外"
     const val RADIO = "广播"
     const val AUDIOBOOK = "有声书"
     const val PODCAST = "播客"
 
     /** 固定展示顺序（不再有「其他」） */
-    val ORDER = listOf(FAVORITE, CCTV, SATELLITE, HKMO_TW, RADIO, AUDIOBOOK, PODCAST)
+    val ORDER = listOf(FAVORITE, CCTV, SATELLITE, HKMO_TW, OVERSEAS, RADIO, AUDIOBOOK, PODCAST)
 
     private val cctvRegex = Regex("""^\s*(CCTV|CETV)""", RegexOption.IGNORE_CASE)
 
@@ -49,6 +50,15 @@ object ChannelGroups {
         val n = name.trim()
         if (cctvRegex.containsMatchIn(n)) return CCTV
         if (n.contains("卫视") || n.contains("衛視")) return SATELLITE
+        // 海外台写成「国家·频道」；先于港澳台关键词判断，避免「日本·CGNTV」被 CGNTV 抢走
+        val dot = n.indexOf('·')
+        if (dot > 0) {
+            val prefix = n.substring(0, dot).trim()
+            if (prefix in listOf("日本", "美国", "英国", "德国", "法国", "澳洲", "新加坡", "泰国", "巴西",
+                    "韩国", "加拿大", "意大利", "西班牙", "印度", "印尼", "马来西亚", "菲律宾", "越南",
+                    "俄罗斯", "荷兰", "瑞士", "瑞典", "挪威", "丹麦", "芬兰", "波兰", "墨西哥", "阿根廷",
+                    "南非", "新西兰")) return OVERSEAS
+        }
         if (hkmoTwKeywords.any { n.contains(it, ignoreCase = true) }) return HKMO_TW
         return ""
     }

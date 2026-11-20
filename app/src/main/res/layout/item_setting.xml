@@ -14,7 +14,8 @@
     android:layout_marginVertical="3dp"
     android:focusable="true"
     android:focusableInTouchMode="true"
-    android:paddingHorizontal="20dp"
+    android:paddingStart="20dp"
+    android:paddingEnd="20dp"
     android:paddingVertical="16dp"
     android:stateListAnimator="@animator/item_scale">
 

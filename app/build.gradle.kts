@@ -9,12 +9,16 @@ android {
 
     defaultConfig {
         applicationId = "com.xiaohei.tv"
-        // 降到 21 (Android 5.0)，覆盖绝大多数老电视/盒子（海信等国产固件多为 Android 5~8）
-        minSdk = 21
+        // 19 (Android 4.4)：4.4 是国产老盒子/老电视最后一代常见系统。
+        // 再往下（4.0~4.3）不覆盖——那批机器没有 TLS 1.2、没有可用的 HLS 解码路径，
+        // 强行支持只会得到「能装不能播」。
+        minSdk = 19
         // 33 是兼顾老电视安装器的稳妥值，避免过高 targetSdk 被旧 PackageManager 拒解析
         targetSdk = 33
-        versionCode = 55
-        versionName = "2.18.8"
+        versionCode = 58
+        versionName = "2.19.2"
+        // 4.4 没有原生 multidex（只有 5.0+ 才有），方法数超 64K 必须靠支持库
+        multiDexEnabled = true
     }
 
     signingConfigs {
@@ -44,6 +48,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // 4.4 上没有 java.util.function / java.time 等 Java 8+ API，靠脱糖补齐
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -58,9 +64,12 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
-    implementation("androidx.media3:media3-exoplayer:1.8.1")
-    implementation("androidx.media3:media3-exoplayer-hls:1.8.1")
-    implementation("androidx.media3:media3-ui:1.8.1")
+    // minSdk 19：4.4 没有原生 multidex，方法数超过 64K 必须靠它
+    implementation("androidx.multidex:multidex:2.0.1")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.annotation:annotation:1.9.1")
     implementation("com.github.bumptech.glide:glide:4.16.0")
