@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 竖屏专用尺寸：仅手机竖屏会命中（电视恒横屏、或 sw>=600dp 走 values-sw600dp[-port]）。
+         手机横竖屏统一压到约电视一半的行高/台标，列表更紧凑、一屏能多看好几行。
+         电视横屏走 values-sw500dp、电视竖屏走 values-sw500dp-port，都恢复原值，不受影响。 -->
+    <dimen name="item_height">34dp</dimen>
+    <dimen name="group_height">28dp</dimen>
+    <dimen name="logo_size">26dp</dimen>
+    <dimen name="text_channel">12sp</dimen>
+    <dimen name="text_group">12sp</dimen>
+    <dimen name="text_meta">9sp</dimen>
+</resources>

@@ -120,6 +120,21 @@
                     android:textSize="12sp"
                     tools:text="12:31 / 45:02　← → 快退 / 快进 15 秒" />
             </LinearLayout>
+
+            <!-- 播放 / 暂停开关：触屏点它直接控制播放，电视端按 OK 键等价于按它（图标随状态切换）。
+                 只在播客/有声书时显示，普通电台（直播）不出现。 -->
+            <ImageButton
+                android:id="@+id/playPauseBtn"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:layout_marginTop="26dp"
+                android:padding="18dp"
+                android:background="@drawable/episode_play_bg"
+                android:contentDescription="播放或暂停"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_episode_pause"
+                android:visibility="gone"
+                tools:visibility="visible" />
         </LinearLayout>
 
         <!-- 字幕只属于播客播放页：贴在屏幕下方，不抢中间标题和进度条的位置。
@@ -361,15 +376,15 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="11sp" />
 
-            <ProgressBar
+            <!-- 换台反馈圈：自定义五彩渐变旋转环，替代单色的系统 indeterminate 圈。
+                 动画由 SpinRingView 自己驱动，不依赖固件 drawable，各品牌表现一致。 -->
+            <com.xiaohei.tv.ui.SpinRingView
                 android:id="@+id/loadingBar"
-                style="?android:attr/progressBarStyle"
                 android:layout_width="36dp"
                 android:layout_height="36dp"
                 android:layout_gravity="bottom|end"
                 android:layout_marginEnd="18dp"
                 android:layout_marginBottom="10dp"
-                android:indeterminateTint="@color/text_secondary"
                 android:visibility="gone" />
         </FrameLayout>
     </LinearLayout>
@@ -552,4 +567,27 @@
             android:textColor="@color/text_secondary"
             android:textSize="11sp" />
     </LinearLayout>
+
+    <!-- 手机专用：横竖屏切换按钮。电视恒横屏，默认 gone，代码里仅手机设备才显示。
+         放右上角、半透明，不挡画面主体；点击在横屏/竖屏间切换。 -->
+    <TextView
+        android:id="@+id/orientationBtn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="14dp"
+        android:layout_marginEnd="14dp"
+        android:background="@drawable/card_overlay"
+        android:clickable="true"
+        android:contentDescription="切换横竖屏"
+        android:focusable="false"
+        android:gravity="center"
+        android:minWidth="52dp"
+        android:minHeight="40dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:text="横屏"
+        android:textColor="@color/text_primary"
+        android:textSize="13sp"
+        android:visibility="gone" />
 </FrameLayout>

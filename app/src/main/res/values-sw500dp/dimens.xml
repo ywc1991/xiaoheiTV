@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 电视 / 大屏（sw>=500dp）：设置页沿用原来的宽松边距与大标题。
+         注意：小米电视 1920x1080 @320dpi 的 smallestWidth 是 540dp，达不到 600，
+         所以历史上用的 values-sw600dp 从未被命中（一直吃默认的手机紧凑值）。
+         改用 sw500dp 后电视真正生效，手机（sw 一般 360-430dp）仍不会误伤。 -->
+    <dimen name="settings_pad_horizontal">56dp</dimen>
+    <dimen name="settings_pad_top">46dp</dimen>
+    <dimen name="settings_title">34sp</dimen>
+
+    <!-- 电视列表项恢复原始宽松尺寸。默认资源已改成手机紧凑值，
+         这里必须显式覆盖，确保手机上缩小一半绝不影响电视（横屏命中本文件）。 -->
+    <dimen name="item_height">34dp</dimen>
+    <dimen name="group_height">28dp</dimen>
+    <dimen name="logo_size">26dp</dimen>
+    <!-- 用户确认：左右两栏字号回到原来的 12sp（「还是原来12吧」）。
+         这里显式写成与默认 values 相同的 12sp，而不是删掉覆盖项——
+         这样以后单独调手机字号时，电视不会跟着变，两边仍然隔离。
+         行高/台标同为默认一组（34/28/26），辅助信息 9sp。 -->
+    <dimen name="text_channel">12sp</dimen>
+    <dimen name="text_group">12sp</dimen>
+    <dimen name="text_meta">9sp</dimen>
+    <dimen name="text_badge">10sp</dimen>
+</resources>

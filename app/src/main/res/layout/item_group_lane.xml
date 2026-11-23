@@ -36,7 +36,7 @@
         android:duplicateParentState="true"
         android:text="★"
         android:textColor="@color/text_group_meta"
-        android:textSize="10sp"
+        android:textSize="@dimen/text_badge"
         android:visibility="gone"
         tools:visibility="visible" />
 

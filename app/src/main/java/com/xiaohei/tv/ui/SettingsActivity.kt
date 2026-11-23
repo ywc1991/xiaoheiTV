@@ -15,6 +15,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.xiaohei.tv.CrashGuard
 import com.xiaohei.tv.DeviceProfile
 import com.xiaohei.tv.R
+import com.xiaohei.tv.UiMode
 import com.xiaohei.tv.update.UpdateChecker
 
 /**
@@ -38,6 +39,10 @@ class SettingsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
+        // 手机显示触摸提示，电视保留遥控器提示
+        findViewById<TextView>(R.id.settingsHint)?.text =
+            if (UiMode.isPhone(this)) "点按设置项　·　返回键退出"
+            else "↑↓ 选择　OK 确认　← 返回"
 
         val recycler = findViewById<RecyclerView>(R.id.settingsList)
         recycler.layoutManager = LinearLayoutManager(this)

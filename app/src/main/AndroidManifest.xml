@@ -23,7 +23,7 @@
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|layoutDirection|locale|mcc|mnc|touchscreen|navigation"
             android:exported="true"
             android:launchMode="singleTask"
-            android:screenOrientation="landscape">
+            android:screenOrientation="unspecified">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -34,7 +34,8 @@
         <activity
             android:name=".ui.SettingsActivity"
             android:exported="false"
-            android:screenOrientation="landscape" />
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|fontScale|uiMode"
+            android:screenOrientation="unspecified" />
 
         <!-- 应用内升级：把下载好的 apk 以 content:// 交给系统安装器 -->
         <provider

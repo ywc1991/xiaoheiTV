@@ -11,12 +11,19 @@
     <!-- 设置页那一整块玻璃卡片的圆角 -->
     <dimen name="sheet_radius">28dp</dimen>
 
-    <dimen name="item_height">58dp</dimen>
-    <dimen name="group_height">46dp</dimen>
-    <!-- 台标槽：行高 58dp 下留 7dp 呼吸位。40dp 时港澳台那批台标实际只有 24dp 高，
-         远看几乎认不出，放到 44dp 能明显好一档而不挤行高 -->
-    <dimen name="logo_size">44dp</dimen>
-    <dimen name="text_channel">15sp</dimen>
-    <dimen name="text_group">15sp</dimen>
-    <dimen name="text_meta">11sp</dimen>
+    <!-- 列表项尺寸默认是「手机」值（紧凑）。电视由 values-sw500dp 覆盖回原值，
+         保证手机缩小一半不会影响电视。行高 34dp 下两行文字(12sp+9sp+3dp)刚好放得下。 -->
+    <dimen name="item_height">34dp</dimen>
+    <dimen name="group_height">28dp</dimen>
+    <dimen name="logo_size">26dp</dimen>
+    <dimen name="text_channel">12sp</dimen>
+    <dimen name="text_group">12sp</dimen>
+    <dimen name="text_meta">9sp</dimen>
+    <!-- 徽标/星标小字：电视跟着主字号一起放大 -->
+    <dimen name="text_badge">10sp</dimen>
+
+    <!-- 设置页边距：默认按手机（窄屏），sw600dp 资源里给电视放大 -->
+    <dimen name="settings_pad_horizontal">20dp</dimen>
+    <dimen name="settings_pad_top">24dp</dimen>
+    <dimen name="settings_title">26sp</dimen>
 </resources>

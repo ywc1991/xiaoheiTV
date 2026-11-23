@@ -11,11 +11,13 @@ import com.xiaohei.tv.model.PodcastShow
  *
  * 节目单本身也不再只靠发版维护：GitHub 上有一份 `podcasts.json`，
  * 启动时拉下来合并（见 [PodcastDirStore]）。[builtin] 永远是兜底，
- * 远端文件缺了、坏了、拿不到，列表都退回这 29 档，不会变空。
+ * 远端文件缺了、坏了、拿不到，列表都退回这 40 档，不会变空。
  *
- * 这 29 个 RSS 已在 2026-11-15 / 11-16 分两批在本机逐个实测过：返回 200、能解析出分集、
+ * 这批 RSS 已在 2026-11-15/11-16 及 11-23 分多批在本机逐个实测过：返回 200、能解析出分集、
  * 首集音频 Range 请求返回 206（mp3 / m4a 直链）。名单里不写需要登录、
  * 或者只有喜马拉雅专辑页（RSS 里没有 enclosure）的源。
+ * 注意 feed.xyzfm.space 域名在 11-23 复测时返回 403，故新增档一律选其它可访问的托管源
+ * （荔枝 / 看理想 / typlog / wavpub / 独立站）。
  */
 object PodcastCatalog {
 
@@ -225,6 +227,90 @@ object PodcastCatalog {
             "女性人物深度访谈",
             cover = "https://image.xyzcdn.net/Fhcbb6JgoBoehDn8iex2HR3cbx9g",
             category = "故事纪实"
+        ),
+
+        // ---- 2026-11-23 新增 11 档：全部本机实测 RSS 200 / 有分集 / 音频直链 206 ----
+        // 人文对谈
+        PodcastShow(
+            "liangwendao", "梁文道·八分", "看理想",
+            "https://api.vistopia.com.cn/rss/program/11.xml",
+            "梁文道讲文化、历史与当下",
+            cover = "https://cdn.vistopia.com.cn/img/podcast-bafen.jpg",
+            category = "人文对谈"
+        ),
+        PodcastShow(
+            "zhenbianfeng", "枕边风", "枕边风",
+            "https://rss.lizhi.fm/rss/490028.xml",
+            "两个人聊书、电影与生活的私房话",
+            cover = "https://cdn.lizhi.fm/podcast_cover/2026/03/20/3201408457022232135.jpg",
+            category = "人文对谈"
+        ),
+        PodcastShow(
+            "xinrui", "信睿播客", "信睿",
+            "https://rss.lizhi.fm/rss/195684579.xml",
+            "思想、文化与社会议题对谈",
+            cover = "https://cdn.lizhi.fm/podcast_cover/2021/12/29/2915253896971030087.jpg",
+            category = "人文对谈"
+        ),
+        PodcastShow(
+            "kandilishi", "看理想时刻", "看理想",
+            "https://api.vistopia.com.cn/rss/program/333.xml",
+            "看理想讲者的短篇声音专栏",
+            cover = "https://cdn5.vistopia.com.cn/3a257b79-db75-439e-a767-cfa23e293b0c.jpg",
+            category = "人文对谈"
+        ),
+        // 科技数码
+        PodcastShow(
+            "sspai", "少数派播客", "少数派",
+            "https://sspai.typlog.io/feed/audio.xml",
+            "高效工作、数字生活与科技应用",
+            cover = "https://i.typlog.com/sspai/8339963934_163514.png?x-oss-process=style/sl",
+            category = "科技数码"
+        ),
+        // 商业观察
+        PodcastShow(
+            "fengtouquan", "疯投圈", "疯投圈",
+            "https://crazy.capital/feed",
+            "消费、投资与商业趋势的深度对谈",
+            cover = "https://crazy.capital/assets/icon-square-normal-dark-cn@4x.png",
+            category = "商业观察"
+        ),
+        PodcastShow(
+            "meilixiang", "没理想编辑部", "看理想",
+            "https://api.vistopia.com.cn/rss/program/116.xml",
+            "编辑部聊文化热点与日常",
+            cover = "https://cdn.vistopia.com.cn/img/podcast-mlxfm-v1.jpg",
+            category = "商业观察"
+        ),
+        // 故事纪实
+        PodcastShow(
+            "chuizhiruxi", "垂直入戏", "故事FM",
+            "https://feeds.storyfm.cn/dive-in.xml",
+            "故事FM 出品的沉浸纪实故事",
+            cover = "https://media-one.wavpub.com/covers/1a747605-5636-4bf4-8853-164b97e5d2b0/5318d3d97a719f67.jpg",
+            category = "故事纪实"
+        ),
+        PodcastShow(
+            "xianzhe", "贤者时间", "贤者时间",
+            "https://rss.lizhi.fm/rss/137289307.xml",
+            "两个女性的生活观察与闲谈",
+            cover = "https://cdn.lizhi.fm/podcast_cover/2019/08/31/2757429913142982215.jpg",
+            category = "故事纪实"
+        ),
+        // 轻松闲聊
+        PodcastShow(
+            "yile", "怡楽播客", "怡楽",
+            "https://s2.proxy.wavpub.com/yeelokradio.xml",
+            "轻松闲聊生活与文化",
+            cover = "https://cdn.lizhi.fm/podcast_cover/2024/02/19/3060348109531479623.jpg",
+            category = "轻松闲聊"
+        ),
+        PodcastShow(
+            "xiaofangjian", "小房间", "小房间",
+            "https://proxy.wavpub.com/xiaofangjian.xml",
+            "粤语闲聊，聊天南地北",
+            cover = "https://image.xyzcdn.net/FuD-sHlw52xuosffd_RgulC5JUsX.jpg",
+            category = "轻松闲聊"
         )
     )
 

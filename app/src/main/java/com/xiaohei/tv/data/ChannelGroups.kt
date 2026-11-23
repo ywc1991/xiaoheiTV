@@ -5,7 +5,7 @@ import com.xiaohei.tv.model.Channel
 /**
  * 频道分组规则。
  *
- * 顺序：收藏 → 央视 → 卫视 → 港澳台 → 广播 → 有声书 → 播客
+ * 顺序：收藏 → 央视 → 卫视 → 体育 → 港澳台 → 广播 → 有声书 → 播客
  *
  * 「广播」是纯音频网络电台，独立成组，不参与视频台的全屏上下键循环。
  * 「有声书」是按本聚合的音频书（一本一行，OK 打开封面书架），
@@ -21,6 +21,7 @@ object ChannelGroups {
     const val FAVORITE = "收藏"
     const val CCTV = "央视"
     const val SATELLITE = "卫视"
+    const val SPORTS = "体育"
     const val HKMO_TW = "港澳台"
     const val OVERSEAS = "海外"
     const val RADIO = "广播"
@@ -28,9 +29,41 @@ object ChannelGroups {
     const val PODCAST = "播客"
 
     /** 固定展示顺序（不再有「其他」） */
-    val ORDER = listOf(FAVORITE, CCTV, SATELLITE, HKMO_TW, OVERSEAS, RADIO, AUDIOBOOK, PODCAST)
+    val ORDER = listOf(FAVORITE, CCTV, SATELLITE, SPORTS, HKMO_TW, OVERSEAS, RADIO, AUDIOBOOK, PODCAST)
 
     private val cctvRegex = Regex("""^\s*(CCTV|CETV)""", RegexOption.IGNORE_CASE)
+
+    /**
+     * 体育台识别：必须在央视规则之前判断，让 CCTV-5 / CCTV-5+ 归到「体育」而非「央视」。
+     * 台湾体育台（纬来体育等）排除，仍留在「港澳台」。
+     */
+    private val sportsKeywords = listOf(
+        "体育", "體育", "高尔夫网球", "高爾夫網球", "风云足球", "風雲足球",
+        "央视台球", "央視台球", "睛彩篮球", "睛彩籃球", "足球频道", "足球頻道"
+    )
+    // CCTV-5 / CCTV-5+ 台名不含「体育」二字，单独列入，确保归体育组而非央视组
+    private val cctvSportsRegex = Regex("""^CCTV-5\+?$""", RegexOption.IGNORE_CASE)
+    private val sportsExclude = listOf("纬来", "緯來", "TVBS", "東森", "东森", "凤凰", "鳳凰")
+
+    private fun isSports(name: String): Boolean =
+        (sportsKeywords.any { name.contains(it, ignoreCase = true) } ||
+            cctvSportsRegex.matches(name.trim())) &&
+            sportsExclude.none { name.contains(it, ignoreCase = true) }
+
+    /**
+     * 央视系体育频道：归到「体育」组的同时，也要在「央视」组里露面。
+     * 只包含 CCTV-5/5+ 和几个央视自办体育数字频道；地方台（广东/天津体育等）不算。
+     * 注意：这里的名字判断只针对已归体育组的频道，避免误伤「央视一套」等普通央视台。
+     */
+    private val cctvSportsNames = listOf(
+        "央视台球", "央視台球", "高尔夫网球", "高爾夫網球",
+        "风云足球", "風雲足球", "精品体育", "精品體育"
+    )
+
+    fun isCctvSports(name: String): Boolean {
+        val n = name.trim()
+        return cctvSportsRegex.matches(n) || cctvSportsNames.any { n.contains(it, ignoreCase = true) }
+    }
 
     /** 港澳台识别关键词（卫视类已被上一条规则截走） */
     private val hkmoTwKeywords = listOf(
@@ -43,11 +76,12 @@ object ChannelGroups {
 
     /**
      * 按台名归类，命中即停：
-     * 央视(CCTV/CETV) → 卫视 → 港澳台；都不命中返回空串，
+     * 体育(含 CCTV-5/5+) → 央视(CCTV/CETV) → 卫视 → 港澳台；都不命中返回空串，
      * 交给 M3uParser 用清单自己的分组名兜底（不再产生「其他」）。
      */
     fun groupOf(name: String): String {
         val n = name.trim()
+        if (isSports(n)) return SPORTS
         if (cctvRegex.containsMatchIn(n)) return CCTV
         if (n.contains("卫视") || n.contains("衛視")) return SATELLITE
         // 海外台写成「国家·频道」；先于港澳台关键词判断，避免「日本·CGNTV」被 CGNTV 抢走

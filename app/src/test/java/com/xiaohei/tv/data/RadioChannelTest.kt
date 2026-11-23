@@ -102,7 +102,8 @@ class RadioChannelTest {
     @Test
     fun `播客排在固定分组顺序的最后且不再有其他分组`() {
         assertEquals(ChannelGroups.PODCAST, ChannelGroups.ORDER.last())
-        assertEquals(7, ChannelGroups.ORDER.size)
+        // 收藏 / 央视 / 卫视 / 体育 / 港澳台 / 海外 / 广播 / 有声书 / 播客
+        assertEquals(9, ChannelGroups.ORDER.size)
         assertTrue(ChannelGroups.ORDER.contains(ChannelGroups.RADIO))
         // 有声书紧挨在播客前面：都是点播音频，放一起才好找
         assertEquals(
@@ -169,10 +170,16 @@ class RadioChannelTest {
         assertTrue(radio.all { it.urls.isNotEmpty() })
         assertTrue(radio.all { c -> c.urls.all { it.startsWith("http://") || it.startsWith("https://") } })
         assertTrue(video.none { it.group == ChannelGroups.RADIO })
-        // 「其他」分组已移除，内置源仍只落在三个视频分组里
+        // 「其他」分组已移除，内置源只落在五个视频分组里（体育、海外分组上线后加入）
         assertTrue(video.none { it.group == "其他" })
         assertEquals(
-            setOf(ChannelGroups.CCTV, ChannelGroups.SATELLITE, ChannelGroups.HKMO_TW),
+            setOf(
+                ChannelGroups.CCTV,
+                ChannelGroups.SATELLITE,
+                ChannelGroups.SPORTS,
+                ChannelGroups.HKMO_TW,
+                ChannelGroups.OVERSEAS
+            ),
             video.map { it.group }.toSet()
         )
         // 电台名不能和视频台撞名，否则切台序列去重会漏台

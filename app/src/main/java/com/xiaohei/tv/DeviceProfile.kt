@@ -24,6 +24,19 @@ object DeviceProfile {
     private const val PREF = "xiaohei_profile"
     private const val KEY_FORCE = "force"
 
+    /**
+     * 国产电视 / 盒子 / 投影仪里 MediaCodec 实现问题较多的老固件品牌。
+     * 只是「进保守档」的加速条件，真正的兜底仍是 RAM / 堆 / 硬解路数这些硬件事实——
+     * 即使某台设备品牌不在这个表里，硬件参数不达标照样进保守档。
+     * 注意：这里只针对 SDK<=27 的老机器，新机器有 SDK 门槛保护，不会因为品牌被误伤。
+     */
+    private val LEGACY_TV_BRANDS = listOf(
+        "TCL", "Hisense", "Skyworth", "Changhong", "Konka", "Sharp",
+        "Xiaomi", "MiTV", "Redmi", "Dangbei", "Xgimi", "JMGO",
+        "Letv", "LeTV", "Sony", "Philips", "Panasonic", "Toshiba",
+        "Formovie", "Wemax", "Mijia", "Haier", "Hisilicon", "Amlogic", "Rockchip"
+    )
+
     enum class Tier { STANDARD, CONSERVATIVE }
 
     /** 采集到的事实。全部是基础类型，[classify] 可在 JVM 单测里直接构造。 */
@@ -54,10 +67,17 @@ object DeviceProfile {
         if (f.totalMemMb in 1..2560) reasons += "RAM${f.totalMemMb}MB(<=2.5G)"
         if (f.memoryClassMb in 1..160) reasons += "memClass${f.memoryClassMb}(<=160)"
         if (f.hardwareVideoDecoders in 1..2) reasons += "硬解${f.hardwareVideoDecoders}路(<=2)"
-        val knownTvRom = (f.manufacturer.contains("TCL", true) ||
-            f.model.contains("75T6", true) ||
-            f.release.contains("TV+OS", true)) && f.sdk in 21..27
-        if (knownTvRom) reasons += "老电视固件"
+        // 已知老固件品牌 / 系统：这些厂商的旧系统 MediaCodec 实现坑多，即便 RAM、
+        // 堆、硬解路数看起来够，也进保守档。严格带 SDK<=27（Android 8.1）门槛，
+        // 新固件（9.0+）一律不因品牌被误降档——已由单测钉死。
+        val legacyBrand = LEGACY_TV_BRANDS.any {
+            f.manufacturer.contains(it, true) || f.model.contains(it, true)
+        }
+        val legacyRom = f.release.contains("TV+OS", true) || f.release.contains("Android 6", true) ||
+            f.release.contains("Android 7", true) || f.release.contains("Android 8", true)
+        if ((legacyBrand || legacyRom || f.model.contains("75T6", true)) && f.sdk in 21..27) {
+            reasons += "老电视固件"
+        }
         return if (reasons.isEmpty()) Verdict(Tier.STANDARD, "资源充足")
         else Verdict(Tier.CONSERVATIVE, reasons.joinToString("+"))
     }

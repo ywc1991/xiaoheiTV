@@ -88,4 +88,41 @@ class DeviceProfileTest {
         )
         assertEquals(DeviceProfile.Tier.STANDARD, v.tier)
     }
+
+    @Test
+    fun `各品牌老固件Android7盒子投影都进保守档`() {
+        // 这些品牌此前只认 TCL，海信 / 当贝 / 极米 / 坚果的老固件会漏判。
+        // 硬件参数特意给足（4GB / memClass256 / 8路硬解），确保命中的是品牌而非硬件。
+        for (brand in listOf("Hisense", "Skyworth", "Dangbei", "Xgimi", "JMGO", "Xiaomi", "Changhong")) {
+            val v = DeviceProfile.classify(
+                facts(manufacturer = brand, release = "7.1.2", sdk = 25,
+                    totalMemMb = 4096L, memoryClassMb = 256, decoders = 8)
+            )
+            assertEquals("$brand 老固件应进保守档", DeviceProfile.Tier.CONSERVATIVE, v.tier)
+            assertTrue("$brand 应命中老电视固件", v.reason.contains("老电视固件"))
+        }
+    }
+
+    @Test
+    fun `新固件大内存即便命中品牌也不降档`() {
+        // SDK>=28 是硬门槛：品牌 / release 里写着 Android 8 字样也不能降新机器。
+        for (brand in listOf("Xgimi", "Dangbei", "Hisense", "MiTV")) {
+            val v = DeviceProfile.classify(
+                facts(manufacturer = brand, release = "10", sdk = 29,
+                    totalMemMb = 6144L, memoryClassMb = 320, decoders = 12)
+            )
+            assertEquals("$brand 新固件应保持标准档", DeviceProfile.Tier.STANDARD, v.tier)
+        }
+    }
+
+    @Test
+    fun `不在品牌表里的杂牌老固件靠硬件事实仍进保守档`() {
+        // 品牌表不是唯一依据：杂牌 2GB Android 8 盒子即便品牌不认识，
+        // 靠 RAM / memClass / SDK 这些硬件事实照样进保守档。
+        val v = DeviceProfile.classify(
+            facts(manufacturer = "UnknownBrand", release = "8.1.0", sdk = 27,
+                totalMemMb = 2048L, memoryClassMb = 128, decoders = 4)
+        )
+        assertEquals(DeviceProfile.Tier.CONSERVATIVE, v.tier)
+    }
 }

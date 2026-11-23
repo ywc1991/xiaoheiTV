@@ -15,8 +15,8 @@ android {
         minSdk = 19
         // 33 是兼顾老电视安装器的稳妥值，避免过高 targetSdk 被旧 PackageManager 拒解析
         targetSdk = 33
-        versionCode = 60
-        versionName = "2.19.4"
+        versionCode = 62
+        versionName = "2.20.0"
         // 4.4 没有原生 multidex（只有 5.0+ 才有），方法数超 64K 必须靠支持库
         multiDexEnabled = true
     }

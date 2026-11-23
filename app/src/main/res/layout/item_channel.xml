@@ -61,7 +61,7 @@
         android:letterSpacing="0.02"
         android:text="● 直播"
         android:textColor="@color/live_red"
-        android:textSize="10sp"
+        android:textSize="@dimen/text_badge"
         android:visibility="gone"
         tools:visibility="visible" />
 
@@ -72,7 +72,7 @@
         android:layout_marginStart="6dp"
         android:text="★"
         android:textColor="@color/gold"
-        android:textSize="10sp"
+        android:textSize="@dimen/text_badge"
         android:visibility="gone"
         tools:visibility="visible" />
 </LinearLayout>

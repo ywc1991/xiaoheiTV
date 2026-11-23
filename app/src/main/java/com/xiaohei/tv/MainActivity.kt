@@ -2,14 +2,19 @@ package com.xiaohei.tv
 
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.GestureDetector
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -106,7 +111,13 @@ class MainActivity : Activity() {
     private lateinit var infoMeta: TextView
     private lateinit var infoProgram: TextView
     private lateinit var errorHint: TextView
-    private lateinit var loadingBar: ProgressBar
+    private lateinit var loadingBar: com.xiaohei.tv.ui.SpinRingView
+
+    /** 手机 or 电视：决定面板宽度、提示文案、是否启用触摸手势。冷启动时定一次。 */
+    private var isPhone = false
+
+    /** 手机专用横竖屏切换按钮；电视上永远是 gone，不参与任何逻辑。 */
+    private lateinit var orientationBtn: TextView
 
     private var player: ExoPlayer? = null
     private var allChannels: List<Channel> = emptyList()
@@ -150,6 +161,10 @@ class MainActivity : Activity() {
     private lateinit var podcastTime: TextView
     /** 字幕只在播客播放页出现；电台和视频台永远不显示 */
     private lateinit var podcastSubtitle: TextView
+    /** 播放页的播放/暂停开关：触屏点它控制播放；仅在播客/有声书时显示，图标跟随状态 */
+    private lateinit var playPauseBtn: ImageButton
+    /** 当前按钮图标资源，避免每秒重复设置同一张图 */
+    private var playPauseIconRes = 0
     private lateinit var transcriptStore: TranscriptStore
     /** 当前这一集的字幕表，只在主线程读写 */
     private var activeCues: List<TranscriptCue> = emptyList()
@@ -402,7 +417,8 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         CrashGuard.notePhase("onCreate")
         conservative = DeviceProfile.isConservative(this)
-        Log.i("XiaoHeiTV", "device ${DeviceProfile.summary(this)}")
+        isPhone = UiMode.isPhone(this)
+        Log.i("XiaoHeiTV", "device ${DeviceProfile.summary(this)} phone=$isPhone")
         // 网络速度自适应：先建共享带宽估计器，后面所有播放器的拉流字节都计入它。
         // 必须在任何 prepare 之前——估计器没有数据时会按快网档处理（=v2.18.1 行为）。
         NetProbe.init(this)
@@ -417,12 +433,9 @@ class MainActivity : Activity() {
 
         listPanel = findViewById(R.id.listPanel)
         listScrim = findViewById(R.id.listScrim)
-        // 整块列表占屏宽 1/3。宽度按屏幕算而不是写死 320dp：
-        // 换 4K 电视或改显示模式时仍是同一个观感比例，两栏内部的 weight 会自动跟着缩。
-        (listPanel.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
-            lp.width = (resources.displayMetrics.widthPixels / 3f).toInt()
-            listPanel.layoutParams = lp
-        }
+        // 面板宽度按「设备 + 方向」算：电视横屏 1/3 屏宽维持原观感；
+        // 手机竖屏几乎铺满、横屏 62%，保证触摸面积。旋转时 applyLayoutForCurrentOrientation 会重算。
+        applyLayoutForCurrentOrientation()
         groupList = findViewById(R.id.groupList)
         channelList = findViewById(R.id.channelList)
         // 猫头＝设置入口。点击（鼠标/触摸/空中飞鼠）直接走这里，
@@ -449,6 +462,11 @@ class MainActivity : Activity() {
         podcastBar = findViewById(R.id.podcastBar)
         podcastTime = findViewById(R.id.podcastTime)
         podcastSubtitle = findViewById(R.id.podcastSubtitle)
+        playPauseBtn = findViewById(R.id.playPauseBtn)
+        playPauseBtn.setOnClickListener {
+            if (justLaunched()) return@setOnClickListener
+            togglePodcastPlayback()
+        }
         podcastSubtitle.maxWidth = (resources.displayMetrics.widthPixels * 0.78f).toInt()
         episodePanel = findViewById(R.id.episodePanel)
         episodeList = findViewById(R.id.episodeList)
@@ -497,7 +515,11 @@ class MainActivity : Activity() {
                     // 播客节目行：点开分集，而不是起播
                     channel.isPodcast -> openEpisodePanel(channel)
                     channel.name == currentChannel?.name -> toggleFullscreen()
-                    else -> playChannel(channel)
+                    else -> {
+                        playChannel(channel)
+                        // 手机：点频道即进全屏看画面（电视保持列表，方便连续选台）
+                        if (isPhone && !fullscreen) applyFullscreen(true, persist = true)
+                    }
                 }
             },
             onLongClick = { channel ->
@@ -538,7 +560,145 @@ class MainActivity : Activity() {
         // 启动时始终显示两栏列表：不再恢复「上次是全屏」的状态，
         // 否则用户开机后看不到列表，会以为分组功能没了（按方向键才唤出）
         applyFullscreen(false, persist = false)
+        if (isPhone) {
+            setupTouchInteractions()
+            setupOrientationButton()
+        }
         loadChannels()
+    }
+
+    // ---------------------------------------------------------------- 横竖屏 / 手机适配
+
+    /**
+     * 按当前设备与屏幕方向重算面板尺寸与提示文案。
+     * 电视保持原有 1/3 屏宽；手机竖屏面板几乎铺满、横屏 62%，两栏都够点。
+     * 这个方法在 onCreate 和每次旋转后都会调用——configChanges 已接管方向变化，
+     * 所以只更新布局参数，绝不重建播放器（换台 continuity 不受影响）。
+     */
+    private fun applyLayoutForCurrentOrientation() {
+        // 面板宽度
+        (listPanel.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
+            lp.width = UiMode.panelWidthPx(this)
+            lp.setMargins(UiMode.panelMarginPx(this), lp.topMargin, lp.rightMargin, UiMode.panelMarginPx(this))
+            listPanel.layoutParams = lp
+        }
+        // 播客字幕宽度跟随屏宽
+        if (::podcastSubtitle.isInitialized) {
+            podcastSubtitle.maxWidth = (resources.displayMetrics.widthPixels * 0.78f).toInt()
+        }
+        // 提示文案（手机强调点击，电视强调遥控器）——具体分组文案在 selectGroup 里再刷一次
+        refreshHintForCurrentGroup()
+    }
+
+    /** 用 UiMode 刷新底部提示；分组相关文案沿用 selectGroup 的逻辑 */
+    private fun refreshHintForCurrentGroup() {
+        if (!::laneHint.isInitialized) return
+        val g = groups.getOrNull(groupIndex)?.name
+        laneHint.text = UiMode.hintText(
+            phone = isPhone,
+            isPodcast = g == ChannelGroups.PODCAST,
+            isAudiobook = g == ChannelGroups.AUDIOBOOK
+        )
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // 旋转后布局参数全部重算；Activity/播放器不重建，当前频道继续播。
+        // isPhone 不重新判定（设备类型恒定，旋转不会改变）。
+        applyLayoutForCurrentOrientation()
+        // 面板/列表的宽度变了，通知适配器重绘以套用新的行高
+        if (::channelAdapter.isInitialized) channelAdapter.notifyDataSetChanged()
+        // 方向按钮文案跟着当前方向刷新（仅手机初始化过，电视上是未初始化直接返回）
+        if (isPhone) refreshOrientationLabel()
+        Log.i("XiaoHeiTV", "orientation changed -> portrait=${UiMode.isPortrait(this)} phone=$isPhone")
+    }
+
+    /**
+     * 手机触摸交互（电视不调用，避免干扰遥控器焦点体系）。
+     *
+     * - 点列表下方的压暗层（画面区）→ 收起列表进全屏
+     * - 全屏点画面 → 唤出频道列表
+     * - 全屏上下滑 → 上一个/下一个台；左右滑 → 下一个/上一个台
+     * 列表项本身的点击由 ChannelAdapter/GroupAdapter 处理，这里不重复。
+     */
+    private fun setupTouchInteractions() {
+        // 列表展开时，点画面区（scrim）收起列表
+        listScrim.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_UP) {
+                if (!justLaunched()) applyFullscreen(true, persist = true)
+            }
+            true // 吃掉触摸，避免穿透到播放器
+        }
+
+        // 全屏播放区：轻点唤出列表 / 滑动切台
+        val detector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                if (justLaunched()) return true
+                if (fullscreen) showListOnCurrentChannel()
+                return true
+            }
+
+            override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
+                if (e1 == null || justLaunched()) return false
+                val dx = e2.x - e1.x
+                val dy = e2.y - e1.y
+                // 只认明确的滑动（避免误触）：主轴位移 > 60px 且明显大于副轴
+                if (kotlin.math.abs(dy) > 60 && kotlin.math.abs(dy) > kotlin.math.abs(dx) * 1.4f) {
+                    // 上滑 → 下一个台，下滑 → 上一个台（与全屏 ↑↓ 键顺序一致）
+                    touchZap(if (dy < 0) 1 else -1)
+                    return true
+                }
+                if (kotlin.math.abs(dx) > 60 && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.4f) {
+                    // 左滑 → 下一个台，右滑 → 上一个台
+                    touchZap(if (dx < 0) 1 else -1)
+                    return true
+                }
+                return false
+            }
+        })
+        playerView.setOnTouchListener { _, event -> detector.onTouchEvent(event) }
+    }
+
+    /**
+     * 触摸滑动换台：无论当前是否全屏，都切到相邻频道并起播。
+     * 复用全屏的 zapChannel（已处理跨分组、左栏同步、预播衔接），
+     * 但如果此时列表是展开的，先收起进全屏，避免"台换了但列表还挡着"。
+     */
+    private fun touchZap(offset: Int) {
+        if (!fullscreen) applyFullscreen(true, persist = true)
+        zapChannel(offset)
+    }
+
+    /**
+     * 手机专用横竖屏切换按钮：只在 isPhone 时由 onCreate 调用，电视端完全不碰。
+     * 按钮文案显示「点它会切到的方向」——当前竖屏写「横屏」，当前横屏写「竖屏」。
+     * 用 setRequestedOrientation 锁定目标方向；Activity 已声明 configChanges，
+     * 旋转只走 onConfigurationChanged，播放器不重建、当前频道不中断。
+     */
+    private fun setupOrientationButton() {
+        orientationBtn = findViewById(R.id.orientationBtn)
+        orientationBtn.visibility = View.VISIBLE
+        refreshOrientationLabel()
+        orientationBtn.setOnClickListener {
+            if (justLaunched()) return@setOnClickListener
+            val toLandscape = UiMode.isPortrait(this)
+            requestedOrientation = if (toLandscape)
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            else
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            // 配置变化回调里会刷新文案；这里兜底立即刷一次，避免个别机型回调延迟
+            refreshOrientationLabel(toLandscape = toLandscape)
+        }
+    }
+
+    /** 刷新方向按钮文案。参数非空时按目标方向算，否则按当前方向反推目标。 */
+    private fun refreshOrientationLabel(toLandscape: Boolean? = null) {
+        if (!::orientationBtn.isInitialized) return
+        val targetLandscape = toLandscape ?: !UiMode.isPortrait(this)
+        // 文案 = 点它会切到的方向：目标横屏→写「竖屏」，目标竖屏→写「横屏」
+        orientationBtn.text = if (targetLandscape) "竖屏" else "横屏"
     }
 
     // ---------------------------------------------------------------- 分组 / 频道
@@ -551,8 +711,15 @@ class MainActivity : Activity() {
         if (favs.isNotEmpty()) buckets.add(GroupBucket(ChannelGroups.FAVORITE, favs))
 
         val byGroup = allChannels.groupBy { it.group }
+        // 央视系体育频道虽归在「体育」组，用户也要求在「央视」组能看到：
+        // 只是往央视桶里多放一份引用（不复制 Channel、不改 allChannels），
+        // 这样切台序列 zapList 仍然是每频道一条，收藏/播放记忆也都按频道名走，不受影响。
+        val cctvSports = allChannels.filter { it.group == ChannelGroups.SPORTS && ChannelGroups.isCctvSports(it.name) }
         for (g in ChannelGroups.ORDER.filter { it != ChannelGroups.FAVORITE }) {
-            val list = byGroup[g] ?: continue
+            var list = (byGroup[g] ?: emptyList()).toList()
+            if (g == ChannelGroups.CCTV && cctvSports.isNotEmpty()) {
+                list = (list + cctvSports).distinctBy { it.name }
+            }
             if (list.isEmpty()) continue
             buckets.add(GroupBucket(g, list))
         }
@@ -577,11 +744,7 @@ class MainActivity : Activity() {
         groupAdapter.setSelected(groupIndex)
         channelAdapter.submit(bucket.channels, store.favorites)
         pendingChannelPos = -1
-        laneHint.text = when (bucket.name) {
-            ChannelGroups.AUDIOBOOK -> "OK 打开书架　→ 浏览列表　← 返回"
-            ChannelGroups.PODCAST -> "OK 打开书架　↑↓ 直接选档　← 返回\n长按 OK 收藏　菜单 设置"
-            else -> "↑↓ 选择　OK 播放　← 返回\n长按 OK 收藏　菜单 设置"
-        }
+        refreshHintForCurrentGroup()
         // 若当前播放台属于该组，滚到它
         val pos = channelAdapter.positionOf(currentChannel?.name ?: "")
         if (pos >= 0) channelList.scrollToPosition(pos)
@@ -799,14 +962,7 @@ class MainActivity : Activity() {
      *   第三方遥控/手柄 → BUTTON_A、BUTTON_SELECT；带数字键盘的遥控 → NUMPAD_ENTER。
      * 少认一个，那台机器上就是「方向能动、按 OK 没反应」。
      */
-    private fun isOkKey(code: Int): Boolean = when (code) {
-        KeyEvent.KEYCODE_DPAD_CENTER,
-        KeyEvent.KEYCODE_ENTER,
-        KeyEvent.KEYCODE_NUMPAD_ENTER,
-        KeyEvent.KEYCODE_BUTTON_A,
-        KeyEvent.KEYCODE_BUTTON_SELECT -> true
-        else -> false
-    }
+    private fun isOkKey(code: Int): Boolean = RemoteKeys.isOk(code)
 
     /**
      * 各品牌遥控器的「菜单 / 设置」键对不上号，这里把常见的都认下来：
@@ -818,18 +974,7 @@ class MainActivity : Activity() {
      *   PROG_RED..BLUE          彩色键：不少机顶盒把菜单做在红键上
      * 只收这些「在本应用里本来没有语义」的键，绝不和方向 / OK / 返回抢键。
      */
-    private fun isSettingsKey(code: Int): Boolean = when (code) {
-        KeyEvent.KEYCODE_MENU,
-        KeyEvent.KEYCODE_SETTINGS,
-        KeyEvent.KEYCODE_TV_CONTENTS_MENU,
-        KeyEvent.KEYCODE_TV_MEDIA_CONTEXT_MENU,
-        KeyEvent.KEYCODE_INFO,
-        KeyEvent.KEYCODE_PROG_RED,
-        KeyEvent.KEYCODE_PROG_GREEN,
-        KeyEvent.KEYCODE_PROG_YELLOW,
-        KeyEvent.KEYCODE_PROG_BLUE -> true
-        else -> false
-    }
+    private fun isSettingsKey(code: Int): Boolean = RemoteKeys.isSettings(code)
 
     private fun openSettings() {
         handler.removeCallbacks(hideInfo)
@@ -2053,6 +2198,8 @@ class MainActivity : Activity() {
                     radioName.maxWidth = (resources.displayMetrics.widthPixels * 0.62f).toInt()
                 }
                 podcastProgress.visibility = View.VISIBLE
+                playPauseBtn.visibility = View.VISIBLE
+                refreshPlayPauseIcon()
                 updatePodcastProgress()
             } else {
                 radioName.text = ch.name
@@ -2061,6 +2208,7 @@ class MainActivity : Activity() {
                 radioName.ellipsize = null
                 radioName.maxWidth = Int.MAX_VALUE
                 podcastProgress.visibility = View.GONE
+                playPauseBtn.visibility = View.GONE
                 // 从播客切到普通电台：字幕和上一集一起退场
                 transcriptSeq++
                 clearSubtitle()
@@ -2090,6 +2238,7 @@ class MainActivity : Activity() {
             nowPlayingTitle = null
             handler.removeCallbacks(nowPlayingFallback)
             podcastProgress.visibility = View.GONE
+            playPauseBtn.visibility = View.GONE
             stopPodcastTick()
         }
         // 视频态一帧都不画；退后台（resumed=false）同样停表
@@ -2514,6 +2663,7 @@ class MainActivity : Activity() {
         podcastPaused = !play
         runCatching { p.playWhenReady = play }
         episodeAdapter.setPlaying(currentEpisode?.id, paused = !play)
+        refreshPlayPauseIcon()
         updatePodcastProgress()
         if (!play) savePodcastPosition()
         showInfo()
@@ -2634,7 +2784,23 @@ class MainActivity : Activity() {
         podcastBar.progress = if (dur > 0L) ((pos * 1000) / dur).toInt().coerceIn(0, 1000) else 0
         podcastTime.text = fmtTime(pos) + " / " + (if (dur > 0L) fmtTime(dur) else "--:--") +
             if (p.playWhenReady) "　← → 前后 15 秒" else "　已暂停 · OK 继续"
+        refreshPlayPauseIcon()
         updateSubtitle(pos)
+    }
+
+    /**
+     * 播放页按钮图标跟随播放状态：播放中显示「暂停」图标，暂停时显示「播放」图标。
+     * 触屏点它 = 开关；电视端按 OK 键走同一条 [togglePodcastPlayback]，图标同样会变。
+     */
+    private fun refreshPlayPauseIcon() {
+        if (!::playPauseBtn.isInitialized) return
+        val playing = player?.playWhenReady == true
+        val res = if (playing) R.drawable.ic_episode_pause else R.drawable.ic_episode_play
+        if (res != playPauseIconRes) {
+            playPauseIconRes = res
+            playPauseBtn.setImageResource(res)
+            playPauseBtn.contentDescription = if (playing) "暂停" else "播放"
+        }
     }
 
     private val podcastTick = object : Runnable {
@@ -2710,7 +2876,11 @@ class MainActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        val code = event.keyCode
+        // 部分蓝牙遥控 / 投影仪把「返回」送成 ESCAPE 而非 BACK，归一到 BACK，
+        // 让下面所有逐层回退逻辑（全屏→列表→退出）自动覆盖，无需改每一处判断。
+        val rawCode = event.keyCode
+        val code = if (RemoteKeys.isBack(rawCode) && rawCode != RemoteKeys.BACK)
+            RemoteKeys.BACK else rawCode
         val isOk = isOkKey(code)
 
         // 启动后 1 秒内吞掉方向键与 OK，避免系统残留事件误触
@@ -2772,6 +2942,12 @@ class MainActivity : Activity() {
                 KeyEvent.KEYCODE_DPAD_RIGHT -> return super.dispatchKeyEvent(event)
                 else -> return true
             }
+        }
+
+        // ---- 播放页按钮持有焦点时，OK 就是按这个按钮（触屏页转电视遥控时的兜底）----
+        if (isOk && ::playPauseBtn.isInitialized && playPauseBtn.hasFocus()) {
+            if (event.action == KeyEvent.ACTION_UP) togglePodcastPlayback()
+            return true
         }
 
         // ---- OK / ENTER：短按与长按分开处理 ----
@@ -2916,16 +3092,42 @@ class MainActivity : Activity() {
                 if (!focusInGroups) backToGroups()
                 return true
             }
-            in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> {
-                digitBuffer += (code - KeyEvent.KEYCODE_0).toString()
-                handler.removeCallbacks(digitTimeout)
-                handler.postDelayed(digitTimeout, 3000)
-                val n = digitBuffer.toIntOrNull()
-                if (n != null && n in 1..channelAdapter.size()) {
-                    val ch = channelAdapter.channelAt(n - 1)
-                    if (ch != null) {
-                        focusInGroups = false
-                        playChannel(ch)
+            // ---- 物理换台键 CH+/-（机顶盒遥控器最常见的 P+/P-）----
+            // 这是明确的「换台」语义，和上下方向键一样：全屏直接切台，列表里也切台，
+            // 不用先展开列表再按 OK。播客场景下换成上一集 / 下一集。
+            in setOf(RemoteKeys.CHANNEL_UP, RemoteKeys.CHANNEL_DOWN) -> {
+                val step = RemoteKeys.channelStep(code)
+                if (currentEpisode != null) stepEpisode(step) else zapChannel(step)
+                return true
+            }
+            // ---- 媒体上一 / 下一键：语义同 CH+/-，部分蓝牙遥控用这两个 ----
+            in setOf(RemoteKeys.MEDIA_NEXT, RemoteKeys.MEDIA_PREVIOUS) -> {
+                val step = RemoteKeys.mediaSkip(code)
+                if (currentEpisode != null) stepEpisode(step) else zapChannel(step)
+                return true
+            }
+            // ---- 播放 / 暂停物理键：只对播客有意义（直播流无法暂停）----
+            // 命中就吞掉，避免落到系统默认行为；直播时给个轻提示说明为何无反应。
+            in setOf(RemoteKeys.MEDIA_PLAY_PAUSE, RemoteKeys.MEDIA_PLAY, RemoteKeys.MEDIA_PAUSE) -> {
+                if (currentEpisode != null) togglePodcastPlayback()
+                else safeToast("直播频道不支持暂停")
+                return true
+            }
+            // ---- 数字键：主键盘区 0..9 与小键盘区（机顶盒常见）都认 ----
+            in (RemoteKeys.DIGIT_0..RemoteKeys.DIGIT_9),
+            in (RemoteKeys.NUMPAD_0..RemoteKeys.NUMPAD_9) -> {
+                val d = RemoteKeys.digit(code)
+                if (d >= 0) {
+                    digitBuffer += d.toString()
+                    handler.removeCallbacks(digitTimeout)
+                    handler.postDelayed(digitTimeout, 3000)
+                    val n = digitBuffer.toIntOrNull()
+                    if (n != null && n in 1..channelAdapter.size()) {
+                        val ch = channelAdapter.channelAt(n - 1)
+                        if (ch != null) {
+                            focusInGroups = false
+                            playChannel(ch)
+                        }
                     }
                 }
                 return true
