@@ -32,6 +32,22 @@ object UpdateChecker {
     private const val UA = "xiaoheiTV-updater"
     private const val TAG = "XiaoHeiTV-update"
 
+    /**
+     * 已知系统安装器包名。只用于「把 content:// 读权限授出去」这一步的兜底，
+     * 不参与任何解析或跳转判断；包不存在时是空操作，因此对老系统零影响。
+     */
+    private val KNOWN_INSTALLERS = listOf(
+        "com.android.packageinstaller",        // AOSP / 多数国产 ROM
+        "com.google.android.packageinstaller", // 带 GMS 的机型
+        "com.android.permissioncontroller",    // Android 10+ 合并了安装器角色
+        "com.huawei.android.packageinstaller", // 华为 EMUI / 鸿蒙
+        "com.hihonor.android.packageinstaller",// 荣耀
+        "com.miui.packageinstaller",           // 小米 / 红米
+        "com.sec.android.app.packageinstaller",// 三星
+        "com.coloros.packageinstaller",        // OPPO / 一加
+        "com.vivo.packageinstaller"            // vivo
+    )
+
     /** GitHub 上一个可安装的版本。 */
     data class Release(
         val tag: String,
@@ -456,6 +472,14 @@ object UpdateChecker {
                             Intent.FLAG_GRANT_READ_URI_PERMISSION
                         )
                     }
+            }
+            // 兜底：鸿蒙 3/4、部分国产 ROM 上包可见性过滤仍可能把系统安装器挡在查询结果之外
+            // （已配 <queries>，但个别机型有额外过滤）。这里按已知包名再授一轮：
+            // 包不存在时 grantUriPermission 是无害空操作，不影响任何既有系统。
+            runCatching {
+                KNOWN_INSTALLERS.forEach { pkg ->
+                    activity.grantUriPermission(pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
             }
             activity.startActivity(intent)
         } catch (e: Exception) {

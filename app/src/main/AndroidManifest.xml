@@ -7,6 +7,18 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
+    <!-- 包可见性声明（Android 11 / API 30 起生效，鸿蒙 3.x≈11、4.x≈12 同样受此约束）。
+         不加这段时 queryIntentActivities 查不到系统安装器，于是「把那批安装器
+         的 content:// 读权限授出去」这一步实际什么都没授，安装器拿不到文件，
+         用户看到的就是「解析软件包时出现问题」或「点了没反应」。
+         Android 10 及更老系统会直接忽略这个节点，行为不变。 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/vnd.android.package-archive" />
+        </intent>
+    </queries>
+
     <application
         android:name=".App"
         android:allowBackup="true"

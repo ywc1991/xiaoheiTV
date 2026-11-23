@@ -393,6 +393,13 @@ class MainActivity : Activity() {
     /** 设备画像判定的保守档：老电视 / 小内存 / 少硬解，少开一路预播并关掉异步解码队列 */
     private var conservative = false
 
+    /**
+     * 是否强制「同步解码队列」。
+     * 取值 = 保守档 || 鸿蒙。安卓设备上它就等于 [conservative]，与改动前完全一致；
+     * 只有鸿蒙设备会额外被置 true（华为自研 MediaCodec 的异步实现切台时易抛 CodecException）。
+     */
+    private var forceSyncCodec = false
+
     /** Activity 是否还活着：所有延迟任务执行前都查它，避免销毁后访问 View / 已释放的播放器 */
     private var destroyed = false
 
@@ -417,8 +424,12 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         CrashGuard.notePhase("onCreate")
         conservative = DeviceProfile.isConservative(this)
+        // 鸿蒙设备额外关异步解码队列；安卓设备这里是 false，行为与改动前一致。
+        // 诊断项里手动「强制标准」（forced=0）时也一并关掉，与「恢复全速」的既有语义对齐。
+        forceSyncCodec = conservative ||
+            (HarmonyCompat.needsSyncCodec && DeviceProfile.forced(this) != 0)
         isPhone = UiMode.isPhone(this)
-        Log.i("XiaoHeiTV", "device ${DeviceProfile.summary(this)} phone=$isPhone")
+        Log.i("XiaoHeiTV", "device ${DeviceProfile.summary(this)} phone=$isPhone ${HarmonyCompat.summary()} syncCodec=$forceSyncCodec")
         // 网络速度自适应：先建共享带宽估计器，后面所有播放器的拉流字节都计入它。
         // 必须在任何 prepare 之前——估计器没有数据时会按快网档处理（=v2.18.1 行为）。
         NetProbe.init(this)
@@ -1137,8 +1148,9 @@ class MainActivity : Activity() {
                     // Android 8.0/8.1（TCL TV+OS 4.0 就在此列）厂商 MediaCodec 的异步回调
                     // 实现普遍有缺陷：切台时两个解码器交接 Surface，异步队列里残留的 buffer
                     // 会触发 CodecException 甚至 native crash。强制走同步队列更稳。
-                    // 标准档不动，切台速度不受影响。
-                    if (conservative) forceDisableMediaCodecAsynchronousQueueing()
+                    // 鸿蒙（华为自研 MediaCodec）同类问题，一并走同步队列。
+                    // 其余安卓设备 forceSyncCodec == conservative，取值与改动前完全相同。
+                    if (forceSyncCodec) forceDisableMediaCodecAsynchronousQueueing()
                 }
         )
             // 关键：不接管音频焦点。否则预播播放器一开始缓冲就会把焦点抢走，
