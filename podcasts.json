@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "updated": "2026-11-16",
+  "version": 3,
+  "updated": "2026-11-23",
   "note": "小黑TV 播客节目单。改完 push 到 main 分支，电视下次启动自动生效，不用发版。字段：id（小写字母/数字/下划线/短横线，会当缓存文件名用）、name、author、feed（RSS 地址，必须是 http/https）、desc；enabled 写 false 可以下线一档（内置的也能下线），缺省为 true。最多 40 档。",
   "shows": [
     {
@@ -233,6 +233,94 @@
       "author": "岩中花述",
       "feed": "https://feed.xyzfm.space/hwen8wf69c6g",
       "desc": "女性人物深度访谈",
+      "enabled": true
+    },
+    {
+      "id": "liangwendao",
+      "name": "梁文道·八分",
+      "author": "看理想",
+      "feed": "https://api.vistopia.com.cn/rss/program/11.xml",
+      "desc": "梁文道讲文化、历史与当下",
+      "enabled": true
+    },
+    {
+      "id": "zhenbianfeng",
+      "name": "枕边风",
+      "author": "枕边风",
+      "feed": "https://rss.lizhi.fm/rss/490028.xml",
+      "desc": "两个人聊书、电影与生活的私房话",
+      "enabled": true
+    },
+    {
+      "id": "xinrui",
+      "name": "信睿播客",
+      "author": "信睿",
+      "feed": "https://rss.lizhi.fm/rss/195684579.xml",
+      "desc": "思想、文化与社会议题对谈",
+      "enabled": true
+    },
+    {
+      "id": "kandilishi",
+      "name": "看理想时刻",
+      "author": "看理想",
+      "feed": "https://api.vistopia.com.cn/rss/program/333.xml",
+      "desc": "看理想讲者的短篇声音专栏",
+      "enabled": true
+    },
+    {
+      "id": "sspai",
+      "name": "少数派播客",
+      "author": "少数派",
+      "feed": "https://sspai.typlog.io/feed/audio.xml",
+      "desc": "高效工作、数字生活与科技应用",
+      "enabled": true
+    },
+    {
+      "id": "fengtouquan",
+      "name": "疯投圈",
+      "author": "疯投圈",
+      "feed": "https://crazy.capital/feed",
+      "desc": "消费、投资与商业趋势的深度对谈",
+      "enabled": true
+    },
+    {
+      "id": "meilixiang",
+      "name": "没理想编辑部",
+      "author": "看理想",
+      "feed": "https://api.vistopia.com.cn/rss/program/116.xml",
+      "desc": "编辑部聊文化热点与日常",
+      "enabled": true
+    },
+    {
+      "id": "chuizhiruxi",
+      "name": "垂直入戏",
+      "author": "故事FM",
+      "feed": "https://feeds.storyfm.cn/dive-in.xml",
+      "desc": "故事FM 出品的沉浸纪实故事",
+      "enabled": true
+    },
+    {
+      "id": "xianzhe",
+      "name": "贤者时间",
+      "author": "贤者时间",
+      "feed": "https://rss.lizhi.fm/rss/137289307.xml",
+      "desc": "两个女性的生活观察与闲谈",
+      "enabled": true
+    },
+    {
+      "id": "yile",
+      "name": "怡楽播客",
+      "author": "怡楽",
+      "feed": "https://s2.proxy.wavpub.com/yeelokradio.xml",
+      "desc": "轻松闲聊生活与文化",
+      "enabled": true
+    },
+    {
+      "id": "xiaofangjian",
+      "name": "小房间",
+      "author": "小房间",
+      "feed": "https://proxy.wavpub.com/xiaofangjian.xml",
+      "desc": "粤语闲聊，聊天南地北",
       "enabled": true
     }
   ]
