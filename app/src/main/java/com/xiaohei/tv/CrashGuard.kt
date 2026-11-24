@@ -39,6 +39,14 @@ object CrashGuard {
     private const val MAX_LEVEL = 2
     private const val MAX_FILES = 3
 
+    /**
+     * 标准档预播槽数。原为 3（覆盖 ZapPredict 三个候选），但真机实测第 3 槽常空转：
+     * 3 路预播 + 1 路主播 = 4 个解码器同时在线，MTK 硬解服务持续报 dequeue 失败
+     * （12 秒 1205 次），白占硬解实例与带宽。回退到 2 槽（下一台 + 回切台这两个
+     * 最高频候选仍命中），实测依据见 2026-11-24 优化对比。只影响标准档；保守档锁 1 槽不变。
+     */
+    private const val STANDARD_SLOTS = 2
+
     /** 崩溃时写进报告：知道是在切哪个台、走到哪一步挂的 */
     @Volatile var lastChannel: String = "-"
     @Volatile var lastPhase: String = "-"
@@ -134,11 +142,9 @@ object CrashGuard {
      * 保守档（Android 8.1 及以下 / ≤2.5GB / 硬解 ≤2 路，例如 TCL 75T6）最多 1 槽，
      * 这样同时最多 2 路解码，不再出现 3 个解码器抢实例的换台闪退。
      *
-     * 标准档从 2 槽提到 3 槽（实测依据）：一条 HLS 流从零到 READY 要 3~4 秒，
-     * 而用户连按同向约 1.6 秒一台。2 槽只能装「下一台 + 回切台」，装不下「下下台」，
-     * 于是每次同向切换都慢半拍。3 槽正好覆盖 ZapPredict 的全部三个候选：
-     * 下一台、来时的台、下下台——回切和连续浏览都命中，且无需改预测顺序。
-     * 主流电视硬解 8~27 路、内存 ≥3GB，4 路解码（1 主 + 3 预播）远未触顶；
+     * 标准档回到 2 槽（见 [STANDARD_SLOTS]）：3 槽虽覆盖 ZapPredict 全部三个候选，
+     * 但真机实测第 3 槽常空转、白占一路硬解，"下下台"那点秒切收益抵不过持续的资源浪费。
+     * 2 槽保留「下一台 + 回切台」两个最高频候选，主流使用场景不受影响。
      * 保守档仍锁 1 槽，老盒子不受影响。
      */
     fun slotCount(c: Context): Int {
@@ -147,10 +153,10 @@ object CrashGuard {
         val base = when {
             lv >= 2 -> 0
             lv >= 1 -> 1
-            else -> 3
+            else -> STANDARD_SLOTS
         }
         if (base == 0) return 0
-        if (m == 0) return 3 // 用户在「关于」里主动恢复标准模式
+        if (m == 0) return STANDARD_SLOTS // 用户在「关于」里主动恢复标准模式
         return if (DeviceProfile.isConservative(c)) minOf(base, 1) else base
     }
 

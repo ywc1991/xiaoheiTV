@@ -726,10 +726,16 @@ class MainActivity : Activity() {
         // 只是往央视桶里多放一份引用（不复制 Channel、不改 allChannels），
         // 这样切台序列 zapList 仍然是每频道一条，收藏/播放记忆也都按频道名走，不受影响。
         val cctvSports = allChannels.filter { it.group == ChannelGroups.SPORTS && ChannelGroups.isCctvSports(it.name) }
+        // 戏曲组是聚合视图：戏曲频道仍留在各自主分组，这里只往戏曲桶多放一份引用。
+        // 和央视体育的做法一致——不复制、不改 allChannels，切台序列与收藏记忆都不受影响。
+        val operas = allChannels.filter { ChannelGroups.isOpera(it.name) }
         for (g in ChannelGroups.ORDER.filter { it != ChannelGroups.FAVORITE }) {
             var list = (byGroup[g] ?: emptyList()).toList()
             if (g == ChannelGroups.CCTV && cctvSports.isNotEmpty()) {
                 list = (list + cctvSports).distinctBy { it.name }
+            }
+            if (g == ChannelGroups.OPERA && operas.isNotEmpty()) {
+                list = (list + operas).distinctBy { it.name }
             }
             if (list.isEmpty()) continue
             buckets.add(GroupBucket(g, list))
@@ -777,6 +783,24 @@ class MainActivity : Activity() {
         pendingChannelPos = -1
         focusChannelAt(pos)
         scheduleWarmUp()
+    }
+
+    /**
+     * 把焦点直接落到「当前正在播放的频道」上（跨分组也能找到）。
+     *
+     * 用在所有「回到频道列表」的入口：冷启动、从设置页/后台返回、全屏唤出列表。
+     * 用户在这些场景的第一诉求是「继续看刚才那个台」，焦点就该在它上面——
+     * 这样按 OK 是对当前台操作，按 ↑↓ 从当前台开始切，不用再满列表找一遍。
+     *
+     * 分组不在当前台所在组时先切过去（selectGroup 会把右栏换成那一组），
+     * 再走 enterChannels 定位到该台；找不到该台（清单变更等）时退回原逻辑，不抢焦点。
+     */
+    private fun focusOnPlayingChannel() {
+        val ch = currentChannel ?: return
+        val gi = groups.indexOfFirst { bucket -> bucket.channels.any { it.name == ch.name } }
+        if (gi < 0) return
+        if (gi != groupIndex) selectGroup(gi)
+        enterChannels()
     }
 
     /** 焦点回到左栏（「收起」） */
@@ -958,7 +982,9 @@ class MainActivity : Activity() {
     /** 从全屏唤出列表：焦点直接落在正在播的台上，省得用户再找一遍 */
     private fun showListOnCurrentChannel() {
         applyFullscreen(false, persist = false)
-        enterChannels()
+        // applyFullscreen(false) 内部会 backToGroups() 把焦点放到左栏；
+        // 这里再统一拉回当前播放频道（含跨分组定位），覆盖「全屏切台后所在组变了」的情况。
+        focusOnPlayingChannel()
     }
 
     /**
@@ -1068,9 +1094,9 @@ class MainActivity : Activity() {
                 selectGroup(if (idx >= 0) idx else 0)
 
                 playChannel(target)
-                focusInGroups = true
-                groupList.requestFocus()
-                focusGroupAt(groupIndex)
+                // 焦点直接落在当前开播的台上（含跨分组定位），不再停在左栏分组。
+                // 用户进来的第一件事是「继续看刚才那个台」，按 ↑↓ 就能从它开始切。
+                focusOnPlayingChannel()
                 loadEpg()
                 if (target.name == last) {
                     safeToast("继续播放：${target.name}")
@@ -1987,10 +2013,11 @@ class MainActivity : Activity() {
     private fun buildLoadControl(forPrebuffer: Boolean): LoadControl {
         val inner = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                MIN_BUFFER_MS,          // 5s  最低缓冲
-                // 保守档的预播只是「备用」，别让它囤 15 秒视频占满 2GB 内存；
-                // 主播放器仍是 15s，用户正在看的画面一点不受影响。
-                if (forPrebuffer && conservative) PRE_MAX_BUFFER_MS else MAX_BUFFER_MS,
+                MIN_BUFFER_MS,          // 8s  最低缓冲（所有播放器共用，max 不得小于它）
+                // 预播槽只负责把下个台预备好，囤太多（原 22s）既占内存又跟主播抢带宽；
+                // 收紧到 8s 与保守档看齐。主播放器仍是 22s，正在看的画面一点不受影响。
+                // 注意 max 不能低于 MIN_BUFFER_MS=8s，否则 DefaultLoadControl 直接抛异常。
+                if (forPrebuffer) PRE_MAX_BUFFER_MS else MAX_BUFFER_MS,
                 BUFFER_FOR_START_MS,    // 0.3s 够就开播
                 BUFFER_AFTER_REBUFFER_MS // 1s  卡顿后恢复的门槛
             )
@@ -3250,6 +3277,11 @@ class MainActivity : Activity() {
         // 回到前台时恢复壁纸（电台态才开，视频态保持关闭）
         radioBackdrop.setAnimating(radioMode)
         schedulePrebufferNext()
+        // 从设置页 / 后台返回：列表可见时把焦点拉回当前播放的频道。
+        // 全屏、播客分集、书架面板是各自独立的焦点区，不在这里抢，避免打断用户当前操作。
+        if (!fullscreen && !panelOpen && !shelfOpen && currentChannel != null) {
+            focusOnPlayingChannel()
+        }
     }
 
     override fun onDestroy() {
@@ -3343,7 +3375,11 @@ class MainActivity : Activity() {
         /** 3.5s：预播迟迟不就绪就别让用户盯着静帧了（超时改为提前接管，不丢弃已缓冲数据） */
         const val PREBUFFER_TIMEOUT_MS = 3_500L
 
-        /** 预播播放器在保守档的上限：主播放器仍是 15s */
+        /**
+         * 预播缓冲上限：标准档与保守档统一 8s（原标准档跟主播放器一样是 22s）。
+         * 预播只备下一个台，囤太满白占内存/带宽；8s 是 min 下限，再低会触发 LoadControl 断言。
+         * 主播放器仍用 MAX_BUFFER_MS=22s，不受影响。
+         */
         const val PRE_MAX_BUFFER_MS = 8_000
 
         /** 第二槽错峰启动，避免两路流同时冷启动互相抢带宽 */

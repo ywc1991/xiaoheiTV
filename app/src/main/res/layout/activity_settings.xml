@@ -34,7 +34,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:letterSpacing="0.02"
-            android:text="版本更新 · 关于"
+            android:text="版本更新 · 需求和反馈 · 关于"
             android:textColor="@color/text_tertiary"
             android:textSize="13sp" />
 

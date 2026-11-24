@@ -105,6 +105,12 @@ http://107.150.60.122/live/cetv3.m3u8
 http://198.204.228.26/live/cetv3.m3u8
 #EXTINF:-1 tvg-logo="https://live.fanmingming.com/tv/CETV4.png" group-title="央视",CETV-4
 http://107.150.60.122/live/cetv4.m3u8
+#EXTINF:-1 group-title="央视",CCTV+ 1
+https://cd-live-stream.news.cctvplus.com/live/smil:CHANNEL1.smil/playlist.m3u8
+#EXTINF:-1 group-title="央视",CCTV+ 2
+https://cd-live-stream.news.cctvplus.com/live/smil:CHANNEL2.smil/playlist.m3u8
+#EXTINF:-1 group-title="央视",发现中国
+https://fastlive.cctvplus.com/out/v1/8442c3bfd4c64a3984389328f6087879/index.m3u8
 #EXTINF:-1 tvg-logo="https://live.fanmingming.com/tv/CCTV5%2B.png" group-title="体育",CCTV-5+
 http://219.147.245.238:25480/newlive/live/hls/6/live.m3u8
 #EXTINF:-1 tvg-logo="https://live.fanmingming.com/tv/%E5%A4%A9%E6%B4%A5%E4%BD%93%E8%82%B2.png" group-title="体育",天津体育
@@ -225,6 +231,8 @@ https://liveout.xntv.tv/a65jur/96iln2.m3u8
 #EXTINF:-1 tvg-logo="https://live.fanmingming.com/tv/%E4%BA%BA%E9%97%B4%E5%8D%AB%E8%A7%86.png" group-title="卫视",人间卫视
 https://5ddce30eb4b55.streamlock.net/bltvhd/bltv1/chunklist_w511254805.m3u8
 http://61.216.67.119:1935/bltvhd/bltv1/chunklist_w1266569526.m3u
+#EXTINF:-1 tvg-logo="https://live.fanmingming.com/tv/%E9%BB%8E%E5%9B%AD%E5%8D%AB%E8%A7%86.png" group-title="卫视",梨园频道
+https://dxtx.hntv.tv/live/lypd.m3u8?txSecret=10c771842a0be59e8b575d765173ec96&txTime=7B923E0A
 #EXTINF:-1 tvg-logo="https://live.fanmingming.com/tv/%E7%BF%A1%E7%BF%A0%E5%8F%B0.png" group-title="港澳台",翡翠台
 https://10.fast.hidns.vip/163189/fct/
 https://cdn6.101.qzz.io/163189/fct4k
@@ -253,6 +261,7 @@ http://38.64.72.148:80/hls/modn/list/2013/chunklist1.m3u8
 http://38.64.72.148/hls/modn/list/2016/playlist.m3u8
 #EXTINF:-1 tvg-logo="https://live.fanmingming.com/tv/%E5%8F%B0%E8%A7%86%E6%96%B0%E9%97%BB.png" group-title="港澳台",台视新闻
 http://38.64.72.148/hls/modn/list/4013/chunklist1.m3u8
+https://live.wcetv.com/hls/master-ttvnews.m3u8
 #EXTINF:-1 tvg-logo="https://live.fanmingming.com/tv/%E4%B8%AD%E8%A7%86.png" group-title="港澳台",中视
 http://37.27.111.214:8080/live/7/hls.m3u8
 #EXTINF:-1 tvg-logo="https://live.fanmingming.com/tv/%E6%B0%91%E8%A7%86%E6%96%B0%E9%97%BB%E5%8F%B0.png" group-title="港澳台",民视新闻台
@@ -276,6 +285,8 @@ https://5ddce30eb4b55.streamlock.net/bltvhd/bltv1/playlist.m3u8
 #EXTINF:-1 tvg-logo="https://live.fanmingming.com/tv/%E7%BE%8E%E5%A5%BD%E7%94%9F%E6%B4%BB%E5%8F%B0.png" group-title="港澳台",美好生活台
 https://5ddce30eb4b55.streamlock.net/bltvhd/bltv1/playlist.m3u8
 http://61.216.67.119:1935/bltvhd/bltv1/playlist.m3u8
+#EXTINF:-1 group-title="港澳台",大爱电视
+https://pull.daaiplus.com/live-DAAIPLUS/live-DAAIPLUS_HD.m3u8
 #EXTINF:-1 group-title="海外",日本·GSTV
 https://rch01e-alive-hls.akamaized.net/15bcd044c531aa99/out/v1/339db39dc83c421f94a8cebb777e4d02/index.m3u8
 #EXTINF:-1 group-title="海外",日本·CGNTV
@@ -357,6 +368,16 @@ https://lonestar-rakuten.amagi.tv/playlist.m3u8
 https://d31z96rdrmwfsp.cloudfront.net/master.m3u8
 #EXTINF:-1 group-title="海外",美国·PBS Kids Alaska
 https://livestream.pbskids.org/out/v1/94b88ad58fc14f84a9382341f1c00b82/akst.m3u8
+#EXTINF:-1 group-title="海外",ABN 中国
+https://mediaserver.abnvideos.com/streams/abnchina.m3u8
+#EXTINF:-1 group-title="海外",金砖电视中文
+https://chibrics.mediacdn.ru/cdn/brics/chinese/playlist.m3u8
+#EXTINF:-1 group-title="海外",BabyFirst 少儿
+https://cdn.fast.jwp.services/v1/channel/1_jB6940Ei_TvhvIHDL/manifest.m3u8
+#EXTINF:-1 group-title="海外",神立少儿
+https://online.godstands.tv:5443/WebRTCApp/streams/KidsChinese.m3u8
+#EXTINF:-1 group-title="海外",WXTV
+https://mobile.ccdntech.com/transcoder/_definst_/vod164_Live/live/chunklist_w1177047531.m3u8
 #EXTINF:-1 group-title="广播",中国之声
 https://ngcdn001.cnr.cn/live/zgzs/index.m3u8
 https://lhttp.qtfm.cn/live/15318317/64k.mp3
@@ -376,3 +397,9 @@ https://lhttp.qtfm.cn/live/4581/64k.mp3
 #EXTINF:-1 group-title="广播",891音乐台
 https://lhttp.qtfm.cn/live/20500215/64k.mp3
 https://live.fm891.net/192k.aac
+#EXTINF:-1 group-title="广播",上海戏剧曲艺广播
+https://rscdn.ajmide.com/r_6/nglive_6.m3u8
+#EXTINF:-1 tvg-logo="https://live.fanmingming.com/tv/%E6%B2%B3%E5%8C%97%E5%8D%AB%E8%A7%86.png" group-title="卫视",河北卫视4K
+https://event.pull.hebtv.com/live/live101.m3u8
+#EXTINF:-1 tvg-logo="https://live.fanmingming.com/tv/%E6%B9%96%E5%8D%97%E5%8D%AB%E8%A7%86.png" group-title="卫视",湖南卫视4K
+http://hlsal-ldvt.qing.mgtv.com/nn_live/nn_x64/dWlwPTEyNy4wLjAuMSZ1aWQ9cWluZy1jbXMmbm5fdGltZXpvbmU9OCZjZG5leF9pZD1hbF9obHNfbGR2dCZ1dWlkPTliODY4NmU5ZTM2YzYwMmMmZT02OTE0NjA0JnY9MSZpZD1ITldTWkdTVCZzPTcwN2RiYTc2YzJjNmJmMTQ4MmUyZGYzOWU2NWM3YWFi/HNWSZGST.m3u8

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  需求和反馈二维码弹窗。
+
+  电视实测（1920x1080，density 2.0）：AlertDialog 内容区可用高度只有约 824px（412dp），
+  原来 320dp 二维码 + 宽松间距总高约 492dp，超出一截 → 二维码底部被裁掉。
+  现在两点修正：
+  1. 二维码缩到 240dp（480px，手机微信仍能可靠识别），间距压紧，总高约 350dp；
+  2. 外层套 ScrollView 兜底——万一小屏/矮屏仍放不下，可滚动看到完整二维码。
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="false">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingStart="28dp"
+        android:paddingTop="16dp"
+        android:paddingEnd="28dp"
+        android:paddingBottom="14dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-medium"
+            android:text="需求和反馈"
+            android:textColor="@color/text_primary"
+            android:textSize="22sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center"
+            android:text="用手机微信扫一扫，填写你的需求和建议"
+            android:textColor="@color/text_tertiary"
+            android:textSize="14sp" />
+
+        <ImageView
+            android:id="@+id/feedbackQr"
+            android:layout_width="240dp"
+            android:layout_height="240dp"
+            android:layout_marginTop="12dp"
+            android:background="@android:color/white"
+            android:contentDescription="需求和反馈二维码"
+            android:scaleType="fitCenter"
+            android:src="@drawable/qr_feedback" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center"
+            android:text="扫码后即可在线填写，多人反馈汇总在同一张表"
+            android:textColor="@color/text_tertiary"
+            android:textSize="13sp" />
+    </LinearLayout>
+</ScrollView>

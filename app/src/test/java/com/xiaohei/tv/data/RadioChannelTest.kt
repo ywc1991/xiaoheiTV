@@ -102,8 +102,8 @@ class RadioChannelTest {
     @Test
     fun `播客排在固定分组顺序的最后且不再有其他分组`() {
         assertEquals(ChannelGroups.PODCAST, ChannelGroups.ORDER.last())
-        // 收藏 / 央视 / 卫视 / 体育 / 港澳台 / 海外 / 广播 / 有声书 / 播客
-        assertEquals(9, ChannelGroups.ORDER.size)
+        // 收藏 / 央视 / 卫视 / 体育 / 戏曲 / 港澳台 / 海外 / 广播 / 有声书 / 播客
+        assertEquals(10, ChannelGroups.ORDER.size)
         assertTrue(ChannelGroups.ORDER.contains(ChannelGroups.RADIO))
         // 有声书紧挨在播客前面：都是点播音频，放一起才好找
         assertEquals(
@@ -227,7 +227,8 @@ class RadioChannelTest {
         )
         val back = removed.filter { it in names }
         assertTrue("这些台应已摘除：$back", back.isEmpty())
-        assertEquals("广播分组应正好 8 个台，实际 ${names.size}", 8, names.size)
+        // 2.20.1 之后按用户要求补入「上海戏剧曲艺广播」，从 8 增至 9。
+        assertEquals("广播分组应正好 9 个台，实际 ${names.size}", 9, names.size)
     }
 
     @Test
@@ -316,5 +317,41 @@ class RadioChannelTest {
     fun `清单里只有一种类型时仍可正常切台`() {
         val all = listOf(ch("CCTV-1", false), ch("CCTV-2", false))
         assertEquals(2, ChannelGroups.zapList(all, inRadio = true).size)
+    }
+
+    @Test
+    fun `戏曲组是聚合视图：戏曲频道被识别但不改其主分组`() {
+        assertEquals(ChannelGroups.OPERA, "戏曲")
+        assertTrue(ChannelGroups.ORDER.contains(ChannelGroups.OPERA))
+        // 只聚合实测能播的两个戏曲频道
+        listOf("梨园频道", "上海戏剧曲艺广播").forEach {
+            assertTrue("$it 应被识别为戏曲频道", ChannelGroups.isOpera(it))
+        }
+        // CCTV-11 / 三立戏剧线路已全网失效，戏曲组不收，但它们在原分组照常保留
+        listOf("CCTV-11", "三立戏剧").forEach {
+            assertFalse("$it 线路失效，不应进戏曲组", ChannelGroups.isOpera(it))
+        }
+        // 普通频道不能被误收进戏曲组
+        listOf("CCTV-1", "湖南卫视", "翡翠台", "891音乐台").forEach {
+            assertFalse("$it 不应被识别为戏曲频道", ChannelGroups.isOpera(it))
+        }
+        // 主分组照旧：用真实清单解析，戏曲频道及被排除的失效台的 group 仍是原分组
+        val f = listOf(
+            File("src/main/assets/channels_main.m3u"),
+            File("app/src/main/assets/channels_main.m3u")
+        ).firstOrNull { it.exists() }
+        assertTrue("找不到内置频道清单", f != null)
+        val parsed = M3uParser.parse(f!!.readText())
+        val expect = mapOf(
+            "CCTV-11" to ChannelGroups.CCTV,
+            "梨园频道" to ChannelGroups.SATELLITE,
+            "三立戏剧" to ChannelGroups.HKMO_TW,
+            "上海戏剧曲艺广播" to ChannelGroups.RADIO
+        )
+        expect.forEach { (name, group) ->
+            val c = parsed.firstOrNull { it.name == name }
+            assertTrue("清单里找不到 $name", c != null)
+            assertEquals("$name 主分组应保持 $group", group, c!!.group)
+        }
     }
 }

@@ -5,7 +5,7 @@ import com.xiaohei.tv.model.Channel
 /**
  * 频道分组规则。
  *
- * 顺序：收藏 → 央视 → 卫视 → 体育 → 港澳台 → 广播 → 有声书 → 播客
+ * 顺序：收藏 → 央视 → 卫视 → 体育 → 戏曲 → 港澳台 → 广播 → 有声书 → 播客
  *
  * 「广播」是纯音频网络电台，独立成组，不参与视频台的全屏上下键循环。
  * 「有声书」是按本聚合的音频书（一本一行，OK 打开封面书架），
@@ -22,6 +22,7 @@ object ChannelGroups {
     const val CCTV = "央视"
     const val SATELLITE = "卫视"
     const val SPORTS = "体育"
+    const val OPERA = "戏曲"
     const val HKMO_TW = "港澳台"
     const val OVERSEAS = "海外"
     const val RADIO = "广播"
@@ -29,7 +30,9 @@ object ChannelGroups {
     const val PODCAST = "播客"
 
     /** 固定展示顺序（不再有「其他」） */
-    val ORDER = listOf(FAVORITE, CCTV, SATELLITE, SPORTS, HKMO_TW, OVERSEAS, RADIO, AUDIOBOOK, PODCAST)
+    val ORDER = listOf(
+        FAVORITE, CCTV, SATELLITE, SPORTS, OPERA, HKMO_TW, OVERSEAS, RADIO, AUDIOBOOK, PODCAST
+    )
 
     private val cctvRegex = Regex("""^\s*(CCTV|CETV)""", RegexOption.IGNORE_CASE)
 
@@ -63,6 +66,26 @@ object ChannelGroups {
     fun isCctvSports(name: String): Boolean {
         val n = name.trim()
         return cctvSportsRegex.matches(n) || cctvSportsNames.any { n.contains(it, ignoreCase = true) }
+    }
+
+    /**
+     * 戏曲频道：戏曲组是一个「聚合视图」，这些频道在各自主分组（卫视/广播等）
+     * 里照常保留，另外在戏曲组里也放一份引用，方便集中找戏。
+     *
+     * 只收录实测能播的频道。CCTV-11 与三立戏剧的公网线路已全部失效
+     * （2026-11-24 全网实测，含 iptv-org 全库与当日更新的开源清单），
+     * 为避免戏曲组里点开黑屏，暂不纳入；两者仍留在央视/港澳台原分组。
+     *
+     * 注意：戏曲组不改变频道本身的 group，也不进切台序列去重逻辑，
+     * 由 MainActivity.buildGroups 单独把这份引用塞进戏曲桶。
+     */
+    private val operaNames = listOf(
+        "梨园频道", "上海戏剧曲艺广播"
+    )
+
+    fun isOpera(name: String): Boolean {
+        val n = name.trim()
+        return operaNames.any { n.equals(it, ignoreCase = true) }
     }
 
     /** 港澳台识别关键词（卫视类已被上一条规则截走） */

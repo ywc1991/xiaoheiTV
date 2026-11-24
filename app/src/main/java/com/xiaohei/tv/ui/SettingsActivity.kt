@@ -2,6 +2,8 @@ package com.xiaohei.tv.ui
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -19,11 +21,11 @@ import com.xiaohei.tv.UiMode
 import com.xiaohei.tv.update.UpdateChecker
 
 /**
- * 设置页。刻意只留两项——检查更新、关于。
+ * 设置页。只留三项——检查更新、需求和反馈、关于。
  *
  * 之前这里堆了播放源切换、自定义源地址、在线更新、广告过滤开关、线路避坑记录……
  * 结果是把「看电视」这件事的开关混进了配置面板：用户想找的永远是被埋在最后一行。
- * 现在只保留「要不要更新」和「这是什么应用」，其余按默认行为走，不再暴露。
+ * 现在只保留「要不要更新」「扫码提需求」「这是什么应用」，其余按默认行为走，不再暴露。
  */
 class SettingsActivity : Activity() {
 
@@ -35,6 +37,10 @@ class SettingsActivity : Activity() {
     private var latest: UpdateChecker.Release? = null
     private var checking = false
     private var lastError: String? = null
+
+    companion object {
+        private const val FEEDBACK_URL = "https://docs.qq.com/sheet/DWmhEd21wU2hpWm5s"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,6 +63,10 @@ class SettingsActivity : Activity() {
     private fun buildRows(): List<Row> = listOf(
         // 检查更新：检测到新版本后，这一行本身就是「下载并安装」的入口
         Row(updateTitle(), updateDesc()) { onCheckUpdateClicked() },
+        Row(
+            "需求和反馈",
+            if (UiMode.isPhone(this)) "点击直接打开填写页面" else "用手机微信扫码填写你的需求和建议"
+        ) { openFeedback() },
         Row("关于", "小黑TV ${UpdateChecker.currentVersion(this)} · 版本信息与说明") { showAbout() }
     )
 
@@ -147,6 +157,32 @@ class SettingsActivity : Activity() {
             .setNegativeButton("以后再说", null)
         // 定制 TV 主题上对话框可能抛异常，不能让「检查更新」整个入口失效
         if (runCatching { dlg.show() }.isFailure) toast("发现新版本 v${r.version}，可到官网手动下载")
+    }
+
+    private fun openFeedback() {
+        // 手机上直接拉起浏览器/微信打开链接，省掉「扫码」这一步
+        if (UiMode.isPhone(this)) {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(FEEDBACK_URL)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            // 不预先 resolveActivity：包可见性过滤下它可能返回 null，但 startActivity 仍能成功
+            if (runCatching { startActivity(intent) }.isFailure) {
+                toast("无法打开浏览器，请用微信访问：docs.qq.com/sheet/DWmhEd21wU2hpWm5s")
+            }
+            return
+        }
+        showFeedbackQr()
+    }
+
+    private fun showFeedbackQr() {
+        val view = layoutInflater.inflate(R.layout.dialog_feedback_qr, null)
+        val dlg = AlertDialog.Builder(this)
+            .setView(view)
+            .setPositiveButton("知道了", null)
+        // 定制 TV 主题上对话框可能抛异常，用 toast 兜底，不让入口失效
+        if (runCatching { dlg.show() }.isFailure) {
+            toast("请用手机微信扫码访问：docs.qq.com/sheet/DWmhEd21wU2hpWm5s")
+        }
     }
 
     private fun showAbout() {
