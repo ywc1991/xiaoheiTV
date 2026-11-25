@@ -78,7 +78,7 @@ object AudiobookCatalog {
         ),
         book(
             "bk-liaozhai", "聊斋夜谭", "Craft智匠",
-            "https://feed.xyzfm.space/bmfnquknq9m7",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/692fce6ac07e730f8e867682",
             "https://image.xyzcdn.net/FgT-9J8X3gzfiJXqZugT7OzFc8WB.png",
             "古典小说", "《聊斋志异》名篇新讲"
         ),
@@ -86,25 +86,25 @@ object AudiobookCatalog {
         // ---------------- 童话寓言 ----------------
         book(
             "bk-andersen", "安徒生童话", "鱼汤不太星",
-            "https://feed.xyzfm.space/hrkbw9k3cal9",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/6837f4622fd0aae332db0cd0",
             "https://image.xyzcdn.net/Fr7xkZaNVDoEZ5N1MqrJtEI0uKt-.jpg",
             "童话寓言", "一百零八篇，逐个讲给孩子听"
         ),
         book(
             "bk-grimm", "格林童话", "鱼汤不太星",
-            "https://feed.xyzfm.space/pfllftrmjtny",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/67d11fafe3016e572f577724",
             "https://image.xyzcdn.net/Fsuj26p6NfvWtlRjFfMD_3tBOJdz.jpg",
             "童话寓言", "五十个经典故事"
         ),
         book(
             "bk-aesop", "伊索寓言", "鱼汤不太星",
-            "https://feed.xyzfm.space/u6mfvvhbegbg",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/67d11ed59498f969b84e9d7e",
             "https://image.xyzcdn.net/FokE-meTt16bhAet5LmptyQpCaXs.jpg",
             "童话寓言", "九十个短寓言，睡前一段正好"
         ),
         book(
             "bk-prince", "小王子", "Jasmine0501",
-            "https://feed.xyzfm.space/yhl9pqa9yjtc",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/667837dcf4c40f3eb4cf4c59",
             "https://image.xyzcdn.net/lswr_s-O-ylV8hL5elRQ3VfTXvZL.jpg",
             "童话寓言", "二十七章全本朗读"
         ),
@@ -132,13 +132,13 @@ object AudiobookCatalog {
         // ---------------- 历史故事 ----------------
         book(
             "bk-zizhi", "资治通鉴", "芮淇讲透资治通鉴",
-            "https://feed.xyzfm.space/46hbtj3jkmwx",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/6934edeb4117d2284f63852f",
             "https://image.xyzcdn.net/FpB-uDFWBLqWUng7G7E_pT8T5H1T.png",
             "历史故事", "从战国讲到五代，一讲一段"
         ),
         book(
             "bk-lishi", "中国历史故事 130 讲", "秦宇熙",
-            "https://feed.xyzfm.space/6ufc83jqq3ad",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/64ad0382864a5214377facf7",
             "https://image.xyzcdn.net/FrlAk2hn1AIQShJbRppi7Wk_8QCl.jpg",
             "历史故事", "按朝代串起中国史"
         ),

@@ -323,14 +323,12 @@ class RadioChannelTest {
     fun `戏曲组是聚合视图：戏曲频道被识别但不改其主分组`() {
         assertEquals(ChannelGroups.OPERA, "戏曲")
         assertTrue(ChannelGroups.ORDER.contains(ChannelGroups.OPERA))
-        // 只聚合实测能播的两个戏曲频道
-        listOf("梨园频道", "上海戏剧曲艺广播").forEach {
+        // 聚合实测能播的戏曲频道：梨园、上海戏剧曲艺广播，以及补了 5 条可用线路的 CCTV-11
+        listOf("梨园频道", "上海戏剧曲艺广播", "CCTV-11").forEach {
             assertTrue("$it 应被识别为戏曲频道", ChannelGroups.isOpera(it))
         }
-        // CCTV-11 / 三立戏剧线路已全网失效，戏曲组不收，但它们在原分组照常保留
-        listOf("CCTV-11", "三立戏剧").forEach {
-            assertFalse("$it 线路失效，不应进戏曲组", ChannelGroups.isOpera(it))
-        }
+        // 三立戏剧线路仍全网失效，戏曲组不收，但它在港澳台原分组照常保留
+        assertFalse("三立戏剧 线路失效，不应进戏曲组", ChannelGroups.isOpera("三立戏剧"))
         // 普通频道不能被误收进戏曲组
         listOf("CCTV-1", "湖南卫视", "翡翠台", "891音乐台").forEach {
             assertFalse("$it 不应被识别为戏曲频道", ChannelGroups.isOpera(it))

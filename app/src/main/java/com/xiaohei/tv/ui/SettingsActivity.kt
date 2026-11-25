@@ -2,6 +2,7 @@ package com.xiaohei.tv.ui
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -28,6 +29,12 @@ import com.xiaohei.tv.update.UpdateChecker
  * 现在只保留「要不要更新」「扫码提需求」「这是什么应用」，其余按默认行为走，不再暴露。
  */
 class SettingsActivity : Activity() {
+
+    /** 与 MainActivity 一致：钳制系统超大字体，避免设置页文字撑破卡片布局 */
+    override fun attachBaseContext(newBase: Context) {
+        val fixed = com.xiaohei.tv.DisplayCompat.correctedConfig(newBase.resources.configuration)
+        super.attachBaseContext(if (fixed != null) newBase.createConfigurationContext(fixed) else newBase)
+    }
 
     private data class Row(val title: String, val desc: String, val action: () -> Unit)
 

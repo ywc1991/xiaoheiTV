@@ -16,8 +16,9 @@ import com.xiaohei.tv.model.PodcastShow
  * 这批 RSS 已在 2026-11-15/11-16 及 11-23 分多批在本机逐个实测过：返回 200、能解析出分集、
  * 首集音频 Range 请求返回 206（mp3 / m4a 直链）。名单里不写需要登录、
  * 或者只有喜马拉雅专辑页（RSS 里没有 enclosure）的源。
- * 注意 feed.xyzfm.space 域名在 11-23 复测时返回 403，故新增档一律选其它可访问的托管源
- * （荔枝 / 看理想 / typlog / wavpub / 独立站）。
+ * 注意 feed.xyzfm.space 域名 11-23 起对家用出口 IP 返回 403（302 到错误页），
+ * 11-25 复测 14 档全部如此，已统一改走小宇宙公开页生成的 RSS；
+ * 远端 podcasts.json 里的旧地址由 [feedCandidates] 兜底，不再出现空白面板。
  */
 object PodcastCatalog {
 
@@ -34,7 +35,7 @@ object PodcastCatalog {
         ),
         PodcastShow(
             "huzuohuyou", "忽左忽右", "JustPod",
-            "https://feed.xyzfm.space/cv4bkgpuglwp",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/5e4ee557418a84a0466737b7",
             "一档关于历史、社会与思想的对谈节目",
             cover = "https://image.xyzcdn.net/FrYMqb37Wg_LA8aenDJJ8SFGsjea",
             category = "人文对谈"
@@ -69,35 +70,35 @@ object PodcastCatalog {
         ),
         PodcastShow(
             "liangyongan", "梁永安的播客", "梁永安",
-            "https://feed.xyzfm.space/tbalbybjc3ev",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/61bc1762e5fdeb81a8db115c",
             "复旦教授聊文学与年轻人的处境",
             cover = "https://image.xyzcdn.net/FvIoHGddh56FQPpqqZbG5QrDapdy.jpg",
             category = "人文对谈"
         ),
         PodcastShow(
             "ritanwuyu", "日谈物语", "日谈公园",
-            "https://feed.xyzfm.space/87x9n4x77fpy",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/5e285247418a84a046271f33",
             "日谈公园出品的纪实故事",
             cover = "https://image.xyzcdn.net/FgKrO6z3werDYCWBPUaTKfuLcQIy.jpg",
             category = "故事纪实"
         ),
         PodcastShow(
             "dongyaguancha", "东亚观察局", "东亚观察局",
-            "https://feed.xyzfm.space/eye-on-east-asia",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/5e9a4e25418a84a046bc6156",
             "东亚时事与社会观察",
             cover = "https://image.xyzcdn.net/FsPm9Kh9XglTbg7Fl9vCW0mRg-Py.jpg",
             category = "人文对谈"
         ),
         PodcastShow(
             "mianji", "面基", "面基",
-            "https://feed.xyzfm.space/6hpdgggtxpxb",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/6388760f22567e8ea6ad070f",
             "和各行各业的人聊聊他们怎么想",
             cover = "https://image.xyzcdn.net/Ftol1VYmqtTUXqIxdMjkt0BcBuFX.png",
             category = "人文对谈"
         ),
         PodcastShow(
             "rizhilu", "日知录", "日谈公园",
-            "https://feed.xyzfm.space/6fqtp9h4u8vm",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/5f31177b9504bbdb779e1857",
             "日常里那些值得记下来的知识",
             cover = "https://image.xyzcdn.net/FrVOB3d78sC3V8__zqDOyDDogh2P",
             category = "人文对谈"
@@ -125,7 +126,7 @@ object PodcastCatalog {
         ),
         PodcastShow(
             "buheshiyi", "不合时宜", "不合时宜",
-            "https://feed.xyzfm.space/ww7cqnybekty",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/5e280fb8418a84a0461fd076",
             "青年视角看世界，时事与文化对谈",
             cover = "https://image.xyzcdn.net/Fq-ccfNzhgTqQNzlG-1qA_jOow7l.png",
             category = "人文对谈"
@@ -139,7 +140,7 @@ object PodcastCatalog {
         ),
         PodcastShow(
             "zhangxiaojun", "张小珺商业访谈录", "张小珺",
-            "https://feed.xyzfm.space/dk4yh3pkpjp3",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/626b46ea9cbbf0451cf5a962",
             "和商业关键人物深度对谈",
             cover = "https://image.xyzcdn.net/Fnuyt9PQDQx0I0wlErG3ZHcW9Gpu.png",
             category = "商业观察"
@@ -153,7 +154,7 @@ object PodcastCatalog {
         ),
         PodcastShow(
             "zhangjing42", "42章经", "42章经",
-            "https://feed.xyzfm.space/evgg6xle9rdc",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/648b0b641c48983391a63f98",
             "创业、投资与商业观察",
             cover = "https://image.xyzcdn.net/FiZZKf2-OlC5ZFzM8VLLmtz4P0ie.png",
             category = "商业观察"
@@ -174,14 +175,14 @@ object PodcastCatalog {
         ),
         PodcastShow(
             "luanfanshu", "乱翻书", "潘乱",
-            "https://feed.xyzfm.space/yxuruh3f9mc4",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/61358d971c5d56efe5bcb5d2",
             "互联网与商业深度观察",
             cover = "https://image.xyzcdn.net/FqqQkG2Api63iYHz38DWlnFdR-1y.jpg",
             category = "商业观察"
         ),
         PodcastShow(
             "zhixing", "知行小酒馆", "有知有行",
-            "https://feed.xyzfm.space/j8yp8gxkmgqr",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/6013f9f58e2f7ee375cf4216",
             "投资、理财与生活思考",
             cover = "https://image.xyzcdn.net/Fso6ZPHSi62eZJOLhorcqpx8TEwv.jpg",
             category = "商业观察"
@@ -195,7 +196,7 @@ object PodcastCatalog {
         ),
         PodcastShow(
             "wuliaozhai", "无聊斋", "无聊斋",
-            "https://feed.xyzfm.space/njwyhpcjqn9t",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/5e280fac418a84a0461fb129",
             "喜剧演员的轻松闲聊",
             cover = "https://image.xyzcdn.net/FtKC0bGtqnMRdHf-1OK5hmMs4c-q",
             category = "轻松闲聊"
@@ -209,7 +210,7 @@ object PodcastCatalog {
         ),
         PodcastShow(
             "naofangdianbo", "脑放电波", "脑放电波",
-            "https://feed.xyzfm.space/wupdmt9er7nb",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/636669d51064cb55f31505fc",
             "科学、技术与现代社会话题",
             cover = "https://image.xyzcdn.net/FvE6LbjcXht5T7prhU59SQNqnTdB.png",
             category = "轻松闲聊"
@@ -223,7 +224,7 @@ object PodcastCatalog {
         ),
         PodcastShow(
             "yanzhonghuashu", "岩中花述", "岩中花述",
-            "https://feed.xyzfm.space/hwen8wf69c6g",
+            "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/625635587bfca4e73e990703",
             "女性人物深度访谈",
             cover = "https://image.xyzcdn.net/Fhcbb6JgoBoehDn8iex2HR3cbx9g",
             category = "故事纪实"
@@ -313,6 +314,55 @@ object PodcastCatalog {
             category = "轻松闲聊"
         )
     )
+
+    /**
+     * 2026-11-25：小宇宙托管域名 feed.xyzfm.space 对家用宽带 IP 做了 ACL，
+     * 请求 302 到一个 403 页面，14 档节目点开全是空的。远端 `podcasts.json`
+     * 里仍是旧地址，所以除了更新内置清单，拉分集时还要按这张表兜底：
+     * 从小宇宙公开页生成 RSS，两个公开镜像互为备份。
+     * 键是节目 id，值是小宇宙播客 id。
+     */
+    private val rescuedXiaoyuzhouIds = mapOf(
+        "huzuohuyou" to "5e4ee557418a84a0466737b7",
+        "liangyongan" to "61bc1762e5fdeb81a8db115c",
+        "ritanwuyu" to "5e285247418a84a046271f33",
+        "dongyaguancha" to "5e9a4e25418a84a046bc6156",
+        "mianji" to "6388760f22567e8ea6ad070f",
+        "rizhilu" to "5f31177b9504bbdb779e1857",
+        "buheshiyi" to "5e280fb8418a84a0461fd076",
+        "zhangxiaojun" to "626b46ea9cbbf0451cf5a962",
+        "zhangjing42" to "648b0b641c48983391a63f98",
+        "luanfanshu" to "61358d971c5d56efe5bcb5d2",
+        "zhixing" to "6013f9f58e2f7ee375cf4216",
+        "wuliaozhai" to "5e280fac418a84a0461fb129",
+        "naofangdianbo" to "636669d51064cb55f31505fc",
+        "yanzhonghuashu" to "625635587bfca4e73e990703",
+        // 有声书里也有 7 本用了同一个失效域名（2026-11-25 一并复测）
+        "bk-liaozhai" to "692fce6ac07e730f8e867682",
+        "bk-andersen" to "6837f4622fd0aae332db0cd0",
+        "bk-grimm" to "67d11fafe3016e572f577724",
+        "bk-aesop" to "67d11ed59498f969b84e9d7e",
+        "bk-prince" to "667837dcf4c40f3eb4cf4c59",
+        "bk-zizhi" to "6934edeb4117d2284f63852f",
+        "bk-lishi" to "64ad0382864a5214377facf7"
+    )
+
+    private val rssHubHosts = listOf(
+        "https://rsshub.bestblogs.dev",
+        "https://rsshub.rssforever.com"
+    )
+
+    /**
+     * 拉分集时的候选地址，按优先级排列。
+     * 内置清单已写好可用地址；远端目录若还带着失效的 xyzfm 地址，
+     * 镜像会排在它前面，省掉每次 8 秒超时，也不会再出现「点开是空的」。
+     */
+    fun feedCandidates(show: PodcastShow): List<String> {
+        val pid = rescuedXiaoyuzhouIds[show.id] ?: return listOf(show.feed)
+        val mirrors = rssHubHosts.map { "$it/xiaoyuzhou/podcast/$pid" }
+        return if (show.feed.contains("feed.xyzfm.space")) mirrors + show.feed
+        else listOf(show.feed) + mirrors
+    }
 
     /**
      * 当前生效的节目单。

@@ -69,18 +69,41 @@ object ChannelGroups {
     }
 
     /**
+     * 央视组内的展示排序键：CCTV-1..17 按数字连续，CCTV-5+ 紧跟 CCTV-5，
+     * CETV 与其余自办频道排在央视数字台之后。仅用于央视桶展示顺序，
+     * 不改变频道归属、切台序列与收藏记忆。
+     */
+    fun cctvDisplayKey(name: String): Long {
+        val n = name.trim()
+        Regex("""^CCTV-(\d+)(\+)?$""", RegexOption.IGNORE_CASE).matchEntire(n)?.let {
+            val num = it.groupValues[1].toInt()
+            val plus = if (it.groupValues[2].isNotEmpty()) 1 else 0
+            return num * 10L + plus
+        }
+        Regex("""^CETV-(\d+)$""", RegexOption.IGNORE_CASE).matchEntire(n)?.let {
+            return 1000L + it.groupValues[1].toInt()
+        }
+        if (n.equals("CGTN", ignoreCase = true)) return 2000L
+        if (n.startsWith("CCTV+", ignoreCase = true)) return 3000L
+        if (n == "发现中国") return 3100L
+        return 9000L
+    }
+
+    /**
      * 戏曲频道：戏曲组是一个「聚合视图」，这些频道在各自主分组（卫视/广播等）
      * 里照常保留，另外在戏曲组里也放一份引用，方便集中找戏。
      *
-     * 只收录实测能播的频道。CCTV-11 与三立戏剧的公网线路已全部失效
-     * （2026-11-24 全网实测，含 iptv-org 全库与当日更新的开源清单），
-     * 为避免戏曲组里点开黑屏，暂不纳入；两者仍留在央视/港澳台原分组。
+     * 只收录实测能播的频道。三立戏剧的公网线路已全部失效（2026-11-24 全网实测），
+     * 暂不纳入；仍留在港澳台原分组。
+     *
+     * CCTV-11 于 2026-11-25 找到两条可用线路（111.61.236.247 / 222.223.41.27，
+     * 电视实测均为正版戏曲内容），现纳入戏曲组；它本身仍在央视组保留。
      *
      * 注意：戏曲组不改变频道本身的 group，也不进切台序列去重逻辑，
      * 由 MainActivity.buildGroups 单独把这份引用塞进戏曲桶。
      */
     private val operaNames = listOf(
-        "梨园频道", "上海戏剧曲艺广播"
+        "CCTV-11", "梨园频道", "上海戏剧曲艺广播"
     )
 
     fun isOpera(name: String): Boolean {

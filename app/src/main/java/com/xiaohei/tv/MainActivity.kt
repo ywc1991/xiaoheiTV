@@ -1,6 +1,7 @@
 package com.xiaohei.tv
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
@@ -89,6 +90,17 @@ import java.util.Locale
  *  导致分组永远展不开）。
  */
 class MainActivity : Activity() {
+
+    /**
+     * 在 super 之前把系统超大字体钳到安全区间：老人模式 / 投影仪出厂 1.3~2.0 的字体
+     * 会撑破按固定 px 布局的频道面板（文字截断、重叠）。正常设备 fontScale=1.0，
+     * correctedConfig 返回 null，完全不 wrap，行为与改动前一致。
+     * 必须在 attachBaseContext 阶段做——setContentView Inflate 时就要用收敛后的资源。
+     */
+    override fun attachBaseContext(newBase: Context) {
+        val fixed = DisplayCompat.correctedConfig(newBase.resources.configuration)
+        super.attachBaseContext(if (fixed != null) newBase.createConfigurationContext(fixed) else newBase)
+    }
 
     private data class GroupBucket(val name: String, val channels: List<Channel>)
 
@@ -550,22 +562,29 @@ class MainActivity : Activity() {
         channelList.itemAnimator = null
         groupList.requestFocus()
 
-        player = newPlayer().also {
+        val mainPlayer = newPlayerSafe()
+        player = mainPlayer
+        if (mainPlayer != null) {
             playerView.useController = false
-            playerView.player = it
-            attach(it)
+            playerView.player = mainPlayer
+            attach(mainPlayer)
+        } else {
+            // 极少数机器上连最小播放器都创建不出来：不让 App 白屏崩溃，
+            // 给一条明确提示，列表仍可用（用户至少知道是本机解码能力问题）。
+            errorHint.visibility = View.VISIBLE
+            errorHint.text = "本机无法初始化视频播放器，请尝试重启设备或减少后台应用"
+            Log.e("XiaoHeiTV", "主播放器创建失败，显示降级提示；列表仍加载")
         }
         // 预播槽数量由设备能力与历史崩溃决定：正常电视仍是 2 个（切台秒切不变），
         // 低内存或反复崩溃过的盒子自动降到 1 个甚至 0 个，避免解码器实例打满而闪退。
         val slots = CrashGuard.slotCount(this)
         Log.i("XiaoHeiTV", "stability level=${CrashGuard.level(this)} slots=$slots conservative=$conservative ${CrashGuard.deviceInfo(this)}")
         repeat(slots) { i ->
-            val p = newPlayer(forPrebuffer = true).also {
-                it.volume = 0f
-                setAudioEnabled(it, false)
-                attach(it)
-            }
-            preSlots.add(PreSlot(i, p))
+            val p = newPlayerSafe(forPrebuffer = true) ?: return@repeat
+            p.volume = 0f
+            setAudioEnabled(p, false)
+            attach(p)
+            preSlots.add(PreSlot(preSlots.size, p))
         }
 
         // 启动时始终显示两栏列表：不再恢复「上次是全屏」的状态，
@@ -732,7 +751,11 @@ class MainActivity : Activity() {
         for (g in ChannelGroups.ORDER.filter { it != ChannelGroups.FAVORITE }) {
             var list = (byGroup[g] ?: emptyList()).toList()
             if (g == ChannelGroups.CCTV && cctvSports.isNotEmpty()) {
-                list = (list + cctvSports).distinctBy { it.name }
+                // 央视体育台（CCTV-5/5+ 等）归位到数字序列：
+                // 合并后按央视展示键排序，让 CCTV-5 紧跟 4、5+ 紧跟 5，而不再堆到末尾。
+                list = (list + cctvSports)
+                    .distinctBy { it.name }
+                    .sortedBy { ChannelGroups.cctvDisplayKey(it.name) }
             }
             if (g == ChannelGroups.OPERA && operas.isNotEmpty()) {
                 list = (list + operas).distinctBy { it.name }
@@ -1210,6 +1233,33 @@ class MainActivity : Activity() {
                     .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(0))
             )
             .build()
+
+    /**
+     * 播放器创建的兜底。杂牌盒子 / 低内存电视上硬解实例打满或厂商 MediaCodec 初始化失败时，
+     * 带各种 DataSource 包装 + decoder fallback 的完整配置可能直接抛异常；这里先试完整配置，
+     * 失败则退回「最小可用」配置（只留 HLS + 默认 LoadControl，不带任何自定义 DataSource），
+     * 再失败才返回 null。正常设备永远走第一档，行为与改动前完全一致。
+     * 返回 null 时主流程只记日志、给提示，不让 App 在 onCreate 阶段崩溃白屏。
+     */
+    private fun newPlayerSafe(forPrebuffer: Boolean = false): ExoPlayer? {
+        val full = runCatching { newPlayer(forPrebuffer) }.getOrNull()
+        if (full != null) return full
+        Log.w("XiaoHeiTV", "newPlayer 完整配置失败，回退最小配置 conservative=$conservative")
+        CrashGuard.noteDecoderFailure(this)
+        val minimal = runCatching {
+            ExoPlayer.Builder(this)
+                .setMediaSourceFactory(
+                    DefaultMediaSourceFactory(this).setLoadErrorHandlingPolicy(
+                        DefaultLoadErrorHandlingPolicy(0)
+                    )
+                )
+                .build()
+        }.getOrNull()
+        if (minimal == null) {
+            Log.e("XiaoHeiTV", "newPlayer 最小配置也失败：本机无法创建播放器")
+        }
+        return minimal
+    }
 
     /** 两个播放器各挂一份监听，回调里靠实例身份区分是「在播的」还是「预播的」 */
     private fun attach(p: ExoPlayer) {
@@ -3139,8 +3189,13 @@ class MainActivity : Activity() {
                 if (currentEpisode != null) stepEpisode(step) else zapChannel(step)
                 return true
             }
-            // ---- 媒体上一 / 下一键：语义同 CH+/-，部分蓝牙遥控用这两个 ----
-            in setOf(RemoteKeys.MEDIA_NEXT, RemoteKeys.MEDIA_PREVIOUS) -> {
+            // ---- 媒体上一 / 下一键：语义同 CH+/-，部分蓝牙遥控 / 盒子 / 投影仪用这几组 ----
+            // 含翻页键（PGUP/PGDN）与快进快退键——没认就会「按了没反应」
+            in setOf(
+                RemoteKeys.MEDIA_NEXT, RemoteKeys.MEDIA_PREVIOUS,
+                RemoteKeys.MEDIA_FAST_FORWARD, RemoteKeys.MEDIA_REWIND,
+                RemoteKeys.PAGE_DOWN, RemoteKeys.PAGE_UP
+            ) -> {
                 val step = RemoteKeys.mediaSkip(code)
                 if (currentEpisode != null) stepEpisode(step) else zapChannel(step)
                 return true
@@ -3209,6 +3264,27 @@ class MainActivity : Activity() {
         // 壁纸动画只在前台播电台时存在，退后台绝不空转
         radioBackdrop.setAnimating(false)
         runCatching { loadingBar.visibility = View.GONE }
+    }
+
+    /**
+     * 系统内存紧张时的主动回收。预播槽是「加分项」——释放它们最多损失切台秒切，
+     * 而保住主播放器就能保住用户正在看的画面。低内存盒子上若不主动收，系统
+     * lowmemorykiller 会直接杀整个进程，用户看到的就是「看着看着闪退」。
+     * 槽位实例保留（只是 stop + 清空媒体），内存恢复后下次切台能重新预热。
+     */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        // TRIM_MEMORY_RUNNING_LOW=10：后台进程已偏多，系统开始考虑回收。
+        // 用数值而非已弃用的常量引用（各 API 版本该数值稳定不变）。
+        if (level >= 10) {
+            cancelPrebuffer()
+            preSlots.forEach { slot ->
+                runCatching { slot.player.stop() }
+                runCatching { slot.player.clearMediaItems() }
+            }
+            if (::radioBackdrop.isInitialized) runCatching { radioBackdrop.setAnimating(false) }
+            Log.i("XiaoHeiTV", "onTrimMemory level=$level：已释放 ${preSlots.size} 个预播槽解码资源")
+        }
     }
 
     override fun onStop() {

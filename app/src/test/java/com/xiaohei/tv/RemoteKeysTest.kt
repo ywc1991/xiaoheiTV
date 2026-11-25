@@ -56,6 +56,20 @@ class RemoteKeysTest {
     }
 
     @Test
+    fun `翻页与快进快退键在盒子投影仪上也能切台`() {
+        // 下一台 / 下一集
+        assertEquals(1, RemoteKeys.mediaSkip(RemoteKeys.PAGE_DOWN))
+        assertEquals(1, RemoteKeys.mediaSkip(RemoteKeys.MEDIA_FAST_FORWARD))
+        // 上一台 / 上一集
+        assertEquals(-1, RemoteKeys.mediaSkip(RemoteKeys.PAGE_UP))
+        assertEquals(-1, RemoteKeys.mediaSkip(RemoteKeys.MEDIA_REWIND))
+        // 翻页键绝不能被当成菜单 / OK / 返回
+        assertFalse(RemoteKeys.isSettings(RemoteKeys.PAGE_UP))
+        assertFalse(RemoteKeys.isOk(RemoteKeys.PAGE_DOWN))
+        assertFalse(RemoteKeys.isBack(RemoteKeys.MEDIA_REWIND))
+    }
+
+    @Test
     fun `返回键认标准BACK与部分投影的ESCAPE`() {
         assertTrue(RemoteKeys.isBack(RemoteKeys.BACK))
         assertTrue(RemoteKeys.isBack(RemoteKeys.ESCAPE))

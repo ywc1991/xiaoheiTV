@@ -36,10 +36,21 @@ class PodcastStore(context: Context) {
             return cached
         }
 
-        val remote = runCatching { fetch(show) }.getOrNull()
+        // 远端节目单可能还写着已失效的 xyzfm 地址；依次试候选源，
+        // 第一档拿到分集就用它，并把实际成功的 feed 记进缓存，避免下次再踩空。
+        var usedFeed = show.feed
+        var remote: List<PodcastEpisode>? = null
+        for (feed in PodcastCatalog.feedCandidates(show)) {
+            val got = runCatching { fetch(show, feed) }.getOrNull()
+            if (!got.isNullOrEmpty()) {
+                remote = got
+                usedFeed = feed
+                break
+            }
+        }
         if (!remote.isNullOrEmpty()) {
             memory[show.id] = remote
-            runCatching { writeCache(show.id, remote, show.feed) }
+            runCatching { writeCache(show.id, remote, usedFeed) }
             return remote
         }
 
@@ -65,7 +76,10 @@ class PodcastStore(context: Context) {
             // 首行记着这份缓存属于哪个 feed：远端目录改了地址以后，
             // 旧缓存里的分集已经不成立了，不能接着当「这一档的最新 40 集」用
             val head = lines.firstOrNull().orEmpty()
-            if (!head.startsWith(FEED_TAG) || head.removePrefix(FEED_TAG).trim() != show.feed) {
+            val cachedFeed = head.removePrefix(FEED_TAG).trim()
+            if (!head.startsWith(FEED_TAG) ||
+                cachedFeed !in PodcastCatalog.feedCandidates(show)
+            ) {
                 return@runCatching null
             }
             lines.drop(1).mapNotNull { line ->
@@ -109,8 +123,8 @@ class PodcastStore(context: Context) {
 
     private fun unescape(s: String): String = s.trim()
 
-    private fun fetch(show: PodcastShow): List<PodcastEpisode> {
-        val conn = (URL(show.feed).openConnection() as HttpURLConnection).apply {
+    private fun fetch(show: PodcastShow, feed: String): List<PodcastEpisode> {
+        val conn = (URL(feed).openConnection() as HttpURLConnection).apply {
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
             instanceFollowRedirects = true

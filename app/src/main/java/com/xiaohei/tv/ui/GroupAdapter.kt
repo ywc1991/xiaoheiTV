@@ -1,6 +1,8 @@
 package com.xiaohei.tv.ui
 
+import android.annotation.SuppressLint
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
@@ -68,6 +70,7 @@ class GroupAdapter(
         private val count: TextView = view.findViewById(R.id.groupCount)
         private val star: TextView = view.findViewById(R.id.groupArrow)
 
+        @SuppressLint("ClickableViewAccessibility")
         fun bind(item: GroupEntry, isSelected: Boolean) {
             name.text = item.name
             count.text = "${item.count}"
@@ -76,6 +79,28 @@ class GroupAdapter(
             star.visibility = if (isFavorite) View.VISIBLE else View.GONE
             itemView.isActivated = isSelected
             itemView.setOnClickListener { onGroupClick(bindingAdapterPosition) }
+            // 分组行 focusableInTouchMode=true。系统默认第一下触摸只抢焦点、吞掉点击，
+            // 于是切组要点两次。这里自己接管触摸：按下即聚焦，抬起立即 performClick，
+            // 并消费事件，避免框架在焦点变化后再触发一次点击。
+            itemView.setOnTouchListener { v, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.isPressed = true
+                        v.requestFocus()
+                        true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        v.isPressed = false
+                        if (bindingAdapterPosition != RecyclerView.NO_POSITION) v.performClick()
+                        true
+                    }
+                    MotionEvent.ACTION_CANCEL -> {
+                        v.isPressed = false
+                        true
+                    }
+                    else -> true
+                }
+            }
         }
     }
 }

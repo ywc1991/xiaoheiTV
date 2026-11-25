@@ -41,6 +41,14 @@ object RemoteKeys {
     const val MEDIA_NEXT = 87           // 下一曲 / 下一个台
     const val MEDIA_PREVIOUS = 88       // 上一曲 / 上一个台
 
+    // —— 翻页键（部分盒子 / 投影仪把上一页/下一页当切台用）——
+    const val PAGE_UP = 93              // PGUP：上一个台 / 上一集
+    const val PAGE_DOWN = 94            // PGDN：下一个台 / 下一集
+
+    // —— 快进 / 快退键（部分蓝牙遥控没有独立的上一/下一，只有这两个）——
+    const val MEDIA_FAST_FORWARD = 90   // FF：下一个台 / 下一集
+    const val MEDIA_REWIND = 89         // REW：上一个台 / 上一集
+
     // —— 返回 ——
     const val BACK = 4
     const val ESCAPE = 111              // 部分蓝牙遥控 / 投影仪的返回键
@@ -83,10 +91,14 @@ object RemoteKeys {
         else -> false
     }
 
-    /** 媒体上一 / 下一键。语义同换台 / 换集：+1 下一个 / -1 上一个 / 0 不是。 */
+    /**
+     * 媒体上一 / 下一键。语义同换台 / 换集：+1 下一个 / -1 上一个 / 0 不是。
+     * 同时收纳翻页键（PGUP/PGDN）与快进/快退键——部分盒子 / 投影仪的遥控器
+     * 没有独立的「上一个/下一个」，只有这几组物理键，漏认就是「按了没反应」。
+     */
     fun mediaSkip(code: Int): Int = when (code) {
-        MEDIA_NEXT -> 1
-        MEDIA_PREVIOUS -> -1
+        MEDIA_NEXT, MEDIA_FAST_FORWARD, PAGE_DOWN -> 1
+        MEDIA_PREVIOUS, MEDIA_REWIND, PAGE_UP -> -1
         else -> 0
     }
 

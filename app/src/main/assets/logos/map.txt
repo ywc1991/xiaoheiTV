@@ -152,6 +152,9 @@ CCTV-16=CCTV16.png
 CCTV-17=CCTV17.png
 CCTV-5+=CCTV5+.png
 CCTV-4欧洲=CCTV4.png
+CCTV电视指南=l236.png
+CCTV世界地理=l237.png
+CCTV怀旧剧场=l238.png
 CETV-1=CETV1.png
 CETV-2=CETV2.png
 CETV-3=CETV3.png
@@ -232,3 +235,11 @@ ABN 中国=l230.png
 BabyFirst 少儿=l233.png
 神立少儿=l234.png
 WXTV=l235.png
+
+# 海外新增高清台 2026-11-25
+美国·CNN国际=l239.png
+英国·Sky News=l240.png
+半岛英文=l241.png
+美国·彭博=l242.png
+美国·NBC News NOW=l243.png
+美国·Newsmax=l244.png
