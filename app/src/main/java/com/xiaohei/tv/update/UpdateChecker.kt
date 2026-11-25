@@ -4,11 +4,14 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.ProgressDialog
 import android.content.ClipData
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.provider.Settings
 import android.widget.Toast
 import androidx.core.content.FileProvider
@@ -40,13 +43,17 @@ object UpdateChecker {
         "com.android.packageinstaller",        // AOSP / 多数国产 ROM
         "com.google.android.packageinstaller", // 带 GMS 的机型
         "com.android.permissioncontroller",    // Android 10+ 合并了安装器角色
-        "com.huawei.android.packageinstaller", // 华为 EMUI / 鸿蒙
+        "com.huawei.packageinstaller",         // 鸿蒙 4.x（实测「安装器无法打开」的机型）
+        "com.huawei.android.packageinstaller", // 华为 EMUI / 老鸿蒙
         "com.hihonor.android.packageinstaller",// 荣耀
+        "com.honor.packageinstaller",          // 荣耀新机型
         "com.miui.packageinstaller",           // 小米 / 红米
         "com.sec.android.app.packageinstaller",// 三星
         "com.coloros.packageinstaller",        // OPPO / 一加
         "com.vivo.packageinstaller"            // vivo
     )
+
+    private const val APK_MIME = "application/vnd.android.package-archive"
 
     /** GitHub 上一个可安装的版本。 */
     data class Release(
@@ -440,6 +447,19 @@ object UpdateChecker {
         }.start()
     }
 
+    /**
+     * 把下载好的 APK 交给系统安装器。
+     *
+     * 现在分两梯队，原因是鸿蒙 4.x：
+     * 安装包原本放在应用自己的外部目录（getExternalFilesDir/update），再用 FileProvider 转成
+     * content:// 交给安装器。绝大多数电视/盒子没问题，但鸿蒙 4.2 会拦下「来自应用沙箱的 apk」，
+     * startActivity 直接抛异常，用户看到的就是「安装器无法打开」。
+     *
+     * 第一梯队：沙箱内 FileProvider（原来的路径，不动）。
+     * 第二梯队：复制一份到系统「下载」目录，用 MediaStore 的公共 content:// 再调一次 ——
+     *           鸿蒙对公共下载目录不做这层拦截，也是这次报障机型最可能走通的路。
+     * 都失败时不再只说「无法打开安装器」，而是告诉用户文件在哪、怎么手动装。
+     */
     private fun install(activity: Activity, apk: File) {
         android.util.Log.i(TAG, "install ${apk.absolutePath} len=${apk.length()}")
         verify(activity, apk)?.let {
@@ -447,45 +467,120 @@ object UpdateChecker {
             toast(activity, it)
             return
         }
-        try {
-            val uri = FileProvider.getUriForFile(
-                activity,
-                activity.packageName + ".fileprovider",
-                apk
-            )
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                // 部分厂商安装器只读 clipData 取 URI（TCL 电视卫士 / TV+OS 常见）
-                clipData = ClipData.newRawUri("APK", uri)
-            }
-            // 定制安装器有时不继承 FLAG_GRANT_READ_URI_PERMISSION，导致「点了没反应」
-            // 或「解析软件包时出现问题」。显式把读权限授予所有能处理它的 Activity。
-            runCatching {
-                activity.packageManager
-                    .queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
-                    .forEach { ri ->
-                        activity.grantUriPermission(
-                            ri.activityInfo.packageName,
-                            uri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        )
-                    }
-            }
-            // 兜底：鸿蒙 3/4、部分国产 ROM 上包可见性过滤仍可能把系统安装器挡在查询结果之外
-            // （已配 <queries>，但个别机型有额外过滤）。这里按已知包名再授一轮：
-            // 包不存在时 grantUriPermission 是无害空操作，不影响任何既有系统。
-            runCatching {
-                KNOWN_INSTALLERS.forEach { pkg ->
-                    activity.grantUriPermission(pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-            }
-            activity.startActivity(intent)
-        } catch (e: Exception) {
-            android.util.Log.w(TAG, "startActivity install failed", e)
-            toast(activity, "无法打开安装器：" + (e.message ?: "未知错误"))
+
+        val sandboxUri = runCatching {
+            FileProvider.getUriForFile(activity, activity.packageName + ".fileprovider", apk)
+        }.onFailure { android.util.Log.w(TAG, "fileprovider uri failed", it) }.getOrNull()
+        if (sandboxUri != null && launchInstaller(activity, sandboxUri, "sandbox")) return
+        val publicUri = exportToDownloads(activity, apk)
+        if (publicUri != null && launchInstaller(activity, publicUri, "downloads")) return
+
+        val where = if (publicUri != null) "「文件管理 → 下载」里的 ${apk.name}"
+        else apk.absolutePath
+        toast(activity, "系统安装器没能打开。安装包已保存到 $where，请用文件管理手动打开安装")
+    }
+
+    /**
+     * 依次尝试三种调起方式，任一成功即返回 true：
+     * 1. ACTION_VIEW + content://（现代安装器，绝大多数设备走这条）
+     * 2. ACTION_INSTALL_PACKAGE + content://（旧接口，部分 ROM 只认这个）
+     * 3. 解析出具体处理者后显式指定组件（应对不接受隐式 intent 的定制安装器）
+     */
+    private fun launchInstaller(activity: Activity, uri: Uri, source: String): Boolean {
+        grantRead(activity, uri)
+
+        val view = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, APK_MIME)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            // 部分厂商安装器只读 clipData 取 URI（TCL 电视卫士 / TV+OS 常见）
+            clipData = ClipData.newRawUri("APK", uri)
         }
+        if (tryStart(activity, view, "$source/view")) return true
+
+        val legacy = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+            setDataAndType(uri, APK_MIME)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            clipData = ClipData.newRawUri("APK", uri)
+        }
+        if (tryStart(activity, legacy, "$source/install_package")) return true
+
+        val handlers = runCatching {
+            activity.packageManager.queryIntentActivities(view, PackageManager.MATCH_DEFAULT_ONLY)
+        }.getOrDefault(emptyList())
+        for (ri in handlers) {
+            val explicit = Intent(view).setClassName(ri.activityInfo.packageName, ri.activityInfo.name)
+            if (tryStart(activity, explicit, "$source/${ri.activityInfo.packageName}")) return true
+        }
+        if (handlers.isEmpty()) android.util.Log.w(TAG, "$source: 没有解析到任何安装器")
+        return false
+    }
+
+    private fun tryStart(activity: Activity, intent: Intent, tag: String): Boolean = try {
+        activity.startActivity(intent)
+        android.util.Log.i(TAG, "installer ok via $tag")
+        true
+    } catch (e: Exception) {
+        // ActivityNotFound / SecurityException 都记下具体类型，装不上时看日志能直接定位
+        android.util.Log.w(TAG, "installer failed via $tag: ${e.javaClass.simpleName}: ${e.message}")
+        false
+    }
+
+    /** 把 content:// 的读权限授给能处理它的 Activity，外加已知安装器包名（包不存在时是空操作） */
+    private fun grantRead(activity: Activity, uri: Uri) {
+        val probe = Intent(Intent.ACTION_VIEW).apply { setDataAndType(uri, APK_MIME) }
+        runCatching {
+            activity.packageManager
+                .queryIntentActivities(probe, PackageManager.MATCH_DEFAULT_ONLY)
+                .forEach { ri ->
+                    activity.grantUriPermission(
+                        ri.activityInfo.packageName,
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+        }
+        // 包可见性过滤可能把安装器挡在查询结果外（已配 <queries>，个别机型仍有额外过滤）
+        runCatching {
+            KNOWN_INSTALLERS.forEach { pkg ->
+                activity.grantUriPermission(pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }
+    }
+
+    /**
+     * 复制安装包到系统「下载」目录，返回 MediaStore 的 content://；不支持或失败返回 null。
+     * 只走 API 29+（免存储权限），鸿蒙 3/4、Android 10+ 都在这条线上。
+     */
+    private fun exportToDownloads(activity: Activity, apk: File): Uri? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        return runCatching {
+            val resolver = activity.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, apk.name)
+                put(MediaStore.Downloads.MIME_TYPE, APK_MIME)
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            if (uri == null) {
+                android.util.Log.w(TAG, "MediaStore insert returned null")
+                return null
+            }
+            resolver.openOutputStream(uri)?.use { out ->
+                apk.inputStream().use { it.copyTo(out) }
+            } ?: run {
+                android.util.Log.w(TAG, "openOutputStream null for $uri")
+                return null
+            }
+            values.clear()
+            values.put(MediaStore.Downloads.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+            android.util.Log.i(TAG, "exported to downloads: $uri")
+            uri
+        }.onFailure { android.util.Log.w(TAG, "exportToDownloads failed", it) }.getOrNull()
     }
 
     /**

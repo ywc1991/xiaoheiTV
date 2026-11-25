@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用内更新弹窗。
+
+  为什么不用 AlertDialog.setMessage：
+  2.20.1 的实测截图里，更新说明约 600 字，标准对话框会把整块内容撑高，
+  连「下载并安装 / 以后再说」两个按钮一起顶出屏幕下沿 —— 电视上只能看到说明，
+  找不到能点的下载按钮。标准 AlertDialog 的高度不受屏幕约束，这是它的老毛病。
+
+  所以这里自己排：说明区放进 ScrollView（高度由 SettingsActivity 按屏幕算，
+  超出上限才裁切滚动），按钮单独一行固定在底部。按钮永远在屏幕内。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/updateRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/panel_bg"
+    android:orientation="vertical"
+    android:paddingStart="30dp"
+    android:paddingTop="26dp"
+    android:paddingEnd="30dp"
+    android:paddingBottom="22dp">
+
+    <TextView
+        android:id="@+id/updateTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="@color/text_primary"
+        android:textSize="21sp"
+        android:text="发现新版本" />
+
+    <TextView
+        android:id="@+id/updateSub"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:textColor="@color/text_tertiary"
+        android:textSize="13sp"
+        android:text="当前 v2.20.1  →  新版本 v2.23.0（7.8 MB）" />
+
+    <!-- 说明区：唯一可伸缩的部分。focusable 让遥控器能在文字上按上下滚动 -->
+    <ScrollView
+        android:id="@+id/updateScroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:focusable="true"
+        android:scrollbars="vertical">
+
+        <TextView
+            android:id="@+id/updateNotes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:lineSpacingExtra="3dp"
+            android:textColor="#CCFFFFFF"
+            android:textSize="14sp" />
+    </ScrollView>
+
+    <!-- 按钮行：固定在底部，不参与滚动，任何屏幕高度下都可见 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp"
+        android:gravity="end"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/btnLater"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:background="@drawable/btn_update_ghost"
+            android:focusable="true"
+            android:gravity="center"
+            android:minWidth="112dp"
+            android:paddingStart="22dp"
+            android:paddingEnd="22dp"
+            android:text="以后再说"
+            android:textColor="@color/btn_update_text_ghost"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/btnInstall"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginStart="14dp"
+            android:background="@drawable/btn_update_primary"
+            android:focusable="true"
+            android:gravity="center"
+            android:minWidth="132dp"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
+            android:text="下载并安装"
+            android:textColor="@color/btn_update_text_primary"
+            android:textSize="15sp" />
+    </LinearLayout>
+</LinearLayout>

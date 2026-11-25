@@ -2,8 +2,11 @@ package com.xiaohei.tv.ui
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -11,6 +14,8 @@ import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -140,30 +145,75 @@ class SettingsActivity : Activity() {
         }
     }
 
+    /**
+     * 应用内更新弹窗。
+     *
+     * 2.20.1 的问题：用 AlertDialog.setMessage 塞 600 字更新说明，整块对话框被撑得比屏幕还高，
+     * 底部「下载并安装 / 以后再说」被顶出画面 —— 电视上能看到版本号，却找不到下载按钮。
+     * 标准 AlertDialog 的高度不被屏幕约束，这是它在大字号电视上的固有毛病。
+     *
+     * 现在改为自绘：说明区放在 ScrollView 里，按屏幕高度算上限（超出才滚动），
+     * 按钮单独一行固定在底部，任何分辨率下都在可视区域内。
+     */
     private fun showUpdateDialog(r: UpdateChecker.Release) {
         val cur = UpdateChecker.currentVersion(this)
         val size = UpdateChecker.sizeText(r.apkSize)
-        val body = buildString {
+        val notes = UpdateChecker.cleanNotes(r.notes)
+
+        val view = layoutInflater.inflate(R.layout.dialog_update, null)
+        view.findViewById<TextView>(R.id.updateTitle).text = "发现新版本 v${r.version}"
+        view.findViewById<TextView>(R.id.updateSub).text = buildString {
             append("当前 v").append(cur).append("  →  新版本 v").append(r.version)
             if (size.isNotEmpty()) append("（").append(size).append("）")
-            val notes = UpdateChecker.cleanNotes(r.notes)
-            if (notes.isNotEmpty()) {
-                append("\n\n")
-                append(notes.take(600))
-                if (notes.length > 600) append("…")
+        }
+        view.findViewById<TextView>(R.id.updateNotes).text =
+            if (notes.length > 700) notes.take(700) + "…" else notes
+
+        val btnInstall = view.findViewById<TextView>(R.id.btnInstall)
+        val btnLater = view.findViewById<TextView>(R.id.btnLater)
+        val dlg = Dialog(this, android.R.style.Theme_Translucent_NoTitleBar)
+        dlg.setContentView(view)
+        dlg.setCanceledOnTouchOutside(true)
+        btnInstall.setOnClickListener {
+            dlg.dismiss()
+            UpdateChecker.downloadAndInstall(this, r) {
+                UpdateChecker.showPermissionDialog(this)
             }
         }
-        val dlg = AlertDialog.Builder(this)
-            .setTitle("发现新版本 v${r.version}")
-            .setMessage(body)
-            .setPositiveButton("下载并安装") { _, _ ->
-                UpdateChecker.downloadAndInstall(this, r) {
-                    UpdateChecker.showPermissionDialog(this)
+        btnLater.setOnClickListener { dlg.dismiss() }
+
+        val dm = resources.displayMetrics
+        val maxW = (dm.widthPixels * 0.62f).toInt()
+        val maxH = (dm.heightPixels * 0.84f).toInt()
+
+        dlg.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setDimAmount(0.72f)
+        }
+
+        // 定制 TV 主题上对话框可能抛异常，不能让「检查更新」整个入口失效
+        if (runCatching { dlg.show() }.isFailure) {
+            toast("发现新版本 v${r.version}，可到官网手动下载")
+            return
+        }
+        val win = dlg.window
+        win?.setLayout(maxW, ViewGroup.LayoutParams.WRAP_CONTENT)
+
+        // 说明再长也不许把按钮顶出屏幕：超出上限就把 ScrollView 收窄，剩余部分滚动查看
+        val scroll = view.findViewById<ScrollView>(R.id.updateScroll)
+        view.post {
+            if (view.height > maxH) {
+                val overflow = view.height - maxH
+                (scroll.layoutParams as? ViewGroup.LayoutParams)?.let { lp ->
+                    lp.height = (scroll.height - overflow).coerceAtLeast((56 * dm.density).toInt())
+                    scroll.layoutParams = lp
+                    view.requestLayout()
+                    win?.setLayout(maxW, ViewGroup.LayoutParams.WRAP_CONTENT)
                 }
             }
-            .setNegativeButton("以后再说", null)
-        // 定制 TV 主题上对话框可能抛异常，不能让「检查更新」整个入口失效
-        if (runCatching { dlg.show() }.isFailure) toast("发现新版本 v${r.version}，可到官网手动下载")
+            btnInstall.requestFocus()
+        }
     }
 
     private fun openFeedback() {
